@@ -18,6 +18,7 @@ These two tests double as the "what the smoke script does" specification
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import time
@@ -208,6 +209,121 @@ def test_smoke_e2e_python_parity(
         assert section in text, f"brief missing section {section}"
     # Sanity: must complete fast.
     assert elapsed < 30, f"smoke e2e took {elapsed:.2f}s (>30s budget)"
+
+
+def test_public_summary_generate_keeps_llm_disabled_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Public-summary fixture generation must not require or invoke LLMs."""
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    _seed_source_root(scratch)
+    _reload_config_with_root(monkeypatch, scratch)
+    monkeypatch.setenv("PUBLIC_SUMMARY_PREFERENCE", "public_only")
+
+    from cn_altdata_brief import cli as cli_mod
+    from cn_altdata_brief.cli import main as cli_main
+
+    def fail_if_called(*args: object, **kwargs: object) -> object:
+        raise AssertionError("LLM rephrase should not be called without --with-llm")
+
+    monkeypatch.setattr(cli_mod, "rephrase_observation", fail_if_called)
+
+    briefs_dir = tmp_path / "briefs"
+    rc_generate = cli_main(
+        [
+            "generate",
+            "--date",
+            "2026-05-17",
+            "--source-mode",
+            "public",
+            "--briefs-dir",
+            str(briefs_dir),
+            "--charts-dir",
+            str(tmp_path / "charts"),
+            "--no-charts",
+            "--no-index",
+            "--no-feed",
+        ]
+    )
+
+    assert rc_generate == 0
+    text = (briefs_dir / "2026-05-17.md").read_text(encoding="utf-8")
+    assert "llm_requested: false" in text
+    assert "llm_rephrase_used: false" in text
+    assert "llm_status: disabled" in text
+    assert "llm_model: null" in text
+    assert "默认不调用 LLM" in text
+    assert "原始规则化版本（deterministic source text）" not in text
+    assert str(scratch) not in text
+    assert "/Users/leonardodon" not in text
+
+
+def test_public_summary_generate_with_unavailable_llm_falls_back_to_raw(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Even explicit --with-llm cannot make public fixture generation depend on LLMs."""
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    _seed_source_root(scratch)
+    _reload_config_with_root(monkeypatch, scratch)
+    monkeypatch.setenv("PUBLIC_SUMMARY_PREFERENCE", "public_only")
+
+    from cn_altdata_brief import cli as cli_mod
+    from cn_altdata_brief.llm import anthropic_client as llm_client
+
+    monkeypatch.setattr(llm_client, "_sdk_module", lambda: None)
+
+    usage_log = tmp_path / "llm_usage.jsonl"
+    briefs_dir = tmp_path / "briefs"
+    rc_generate = cli_mod.main(
+        [
+            "generate",
+            "--date",
+            "2026-05-17",
+            "--source-mode",
+            "public",
+            "--briefs-dir",
+            str(briefs_dir),
+            "--charts-dir",
+            str(tmp_path / "charts"),
+            "--no-charts",
+            "--no-index",
+            "--no-feed",
+            "--with-llm",
+            "--llm-usage-log",
+            str(usage_log),
+        ]
+    )
+
+    assert rc_generate == 0
+    text = (briefs_dir / "2026-05-17.md").read_text(encoding="utf-8")
+    assert "llm_requested: true" in text
+    assert "llm_rephrase_used: false" in text
+    assert "llm_status: sdk_missing" in text
+    assert "LLM 改写已请求但未用于正文" in text
+    assert "原始规则化版本（deterministic source text）" not in text
+    assert str(scratch) not in text
+    assert "/Users/leonardodon" not in text
+
+    records = [
+        json.loads(line)
+        for line in usage_log.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(records) == 1
+    record = records[0]
+    assert record["model"] is None
+    assert record["status"] == "sdk_missing"
+    assert record["input_tokens"] is None
+    assert record["output_tokens"] is None
+    assert record["latency_ms"] is None
+    assert record["est_cost_usd"] == 0.0
+    assert record["prompt_hash"] == ""
+    assert record["date"] == "2026-05-17"
+    assert record["section"] == "observation"
+    assert "raw_text" not in record
+    assert "polished_text" not in record
 
 
 # ---------------------------------------------------------------------------
