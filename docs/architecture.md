@@ -1,4 +1,4 @@
-# Architecture · v0.3
+# Architecture · v0.4
 
 ## 总览
 
@@ -7,7 +7,7 @@
 │        4 个上游量化项目（各自的 git 仓库）             │
 │  ┌────────────────┐   ┌────────────────┐               │
 │  │ cache/...json  │   │data/public/    │               │
-│  │ (内部缓存)     │   │ *_summary.json │  ←─── v0.3 优先 │
+│  │ (内部缓存)     │   │ public artifact│  ←─── v0.4 4/4 覆盖 │
 │  └────────────────┘   └────────────────┘               │
 └────────────┬────────────────────────────┬──────────────┘
              │ filesystem (本机)          │ git checkout (CI 可读)
@@ -42,22 +42,22 @@
 
 ## 设计原则
 
-1. **public-summary preferred**：v0.3 起，默认顺序是 `live → data/public/*_summary.json → cache`。public summary 是上游项目主动提交到 git 的「脱敏摘要」，是 GitHub Actions 唯一能读到的路径。`--source-mode {auto,public,cache,live}` 可显式切换。
+1. **public-summary preferred**：默认顺序是 `live → public artifact → cache`。v0.4 起 4/4 adapters 都支持 public artifact（ETF 512400 使用已提交的 `src/data/liveSnapshot.json` 作为 public-by-default artifact）。`--source-mode {auto,public,cache,live}` 可显式切换。
 2. **graceful degradation**：任一适配器抛 `AdapterUnavailable`，对应段落显示「数据缺失」而非整体崩溃。
-3. **deterministic synthesis**：v0.3 仍不引入 LLM。所有「观察」句都来自 `synthesis/observation.py` 的候选信号排序与模板函数，全部可单测。
+3. **deterministic synthesis**：v0.4 仍不引入 LLM。所有「观察」句都来自 `synthesis/observation.py` 的候选信号排序与模板函数，全部可单测。
 4. **per-section sources footer**：每段必须列出上游项目 + cache 文件名 + 时间戳，便于独立核查。
-5. **pre-publish validation**：`cn-altdata-brief validate` 在发布前检查 cache 是否缺失、陈旧或结构不完整。新增 `public_summary_freshness` 检查 24 小时内是否有 public summary 产出。
+5. **pre-publish validation**：`cn-altdata-brief validate` 在发布前检查 source 是否缺失、陈旧或结构不完整；`public_summary_freshness` 覆盖 4 个 public artifacts，并在输出末尾打印每个 adapter 的实际解析路径和 mtime。
 
-## v0.1 接入的 4 个源
+## v0.4 接入的 4 个源
 
-| Adapter | 默认路径 | 关键字段 |
+| Adapter | Public artifact | Cache/live fallback | 关键字段 |
 |---|---|---|
-| `SuperPricingAdapter` | `~/PycharmProjects/super-pricing-system/cache/alt_data/providers/{policy_radar,macro_hf}.json` | `signal.industry_signals`, `records[].raw_value` |
-| `QuantTradingAdapter` | `~/PycharmProjects/quant-trading-system/cache/alt_data/providers/policy_radar.json` | 从 `industry_signals` 派生 heat 排行（fallback） |
-| `IndexResearchAdapter` | `~/index-inclusion-research/results/real_tables/cma_hypothesis_verdicts.csv` + `pap_deviation_report.csv` | `verdict`, `pap_changes` |
-| `ETF512400Adapter` | `~/ETF 512400/src/data/liveSnapshot.json` | `quote`, `nav`, `meta.sourceHealth` |
+| `SuperPricingAdapter` | `~/PycharmProjects/super-pricing-system/data/public/alt_data_summary.json` | `cache/alt_data/providers/{policy_radar,macro_hf}.json` | `policy_radar.industry_signals`, `macro_hf.metals` |
+| `QuantTradingAdapter` | `~/PycharmProjects/quant-trading-system/data/public/quant_summary.json` | `cache/alt_data/providers/policy_radar.json` + industry cache | `policy_radar.top_industries`, `industry_heat.top_industries_by_score`, `etf_rotation`, `paper_trading` profile names |
+| `IndexResearchAdapter` | `~/index-inclusion-research/data/public/index_research_summary.json` | `results/real_tables/cma_hypothesis_verdicts.csv` + `pap_deviation_report.csv` | `verdicts`, `pap_changes` |
+| `ETF512400Adapter` | `~/ETF 512400/src/data/liveSnapshot.json` | same public-by-default file | `quote`, `nav`, `meta.sourceHealth` |
 
 ## 部署形态
 
-- **本地**：`scripts/generate_daily.sh` + macOS `launchd` 或 `cron`。读 cache 或 public summary 均可。
-- **GitHub Actions** (v0.3)：当上游项目提交了 `data/public/<source>_summary.json` 后，`.github/workflows/daily.yml` 可以 `actions/checkout` 几个上游仓库（仅 public 目录），然后 `uv run cn-altdata-brief generate --source-mode public` 跑通整个流水线。目前 super-pricing 已提交 alt_data_summary.json，index-inclusion-research 的 summary 还在补全。
+- **本地**：`scripts/generate_daily.sh` + macOS `launchd` 或 `cron`。默认 `auto` 可读 live/public/cache；`scripts/smoke_e2e.sh` 会把 4 个上游 public artifacts 复制到临时 scratch dir 后跑 `validate + generate`。
+- **GitHub Actions** (v0.4)：`.github/workflows/daily.yml` checkout 4 个上游仓库，只读 public artifacts，然后执行 `validate --source-mode public` 与 `generate --source-mode public`。缺 public artifact 是 hard fail；陈旧 public artifact 是 WARN，避免单个 stale snapshot 阻断结构健康的简报发布。

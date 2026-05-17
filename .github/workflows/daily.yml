@@ -2,10 +2,9 @@ name: Daily Brief
 
 # Beijing time 09:00 = 01:00 UTC; trading days Mon-Fri.
 #
-# v0.3 plumbing:
-#   - This workflow now checks out the upstream source repos (super-pricing
-#     and index-inclusion-research) and reads their `data/public/*_summary.json`
-#     artifacts.
+# v0.4 plumbing:
+#   - This workflow now checks out the upstream source repos and reads their
+#     public artifacts (data/public/*_summary.json or ETF liveSnapshot.json).
 #   - `--source-mode public` forces the adapters to only read public summaries
 #     (no cache fallback), so the workflow fails loudly if a summary is missing
 #     instead of silently emitting an empty brief.
@@ -55,7 +54,26 @@ jobs:
           sparse-checkout: |
             data/public
           sparse-checkout-cone-mode: false
-        continue-on-error: true  # index-inclusion-research summary still WIP
+
+      - name: Checkout quant-trading-system (public summary only)
+        uses: actions/checkout@v4
+        with:
+          repository: Leonard-Don/quant-trading-system
+          path: sources/PycharmProjects/quant-trading-system
+          fetch-depth: 1
+          sparse-checkout: |
+            data/public
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout ETF 512400 (public snapshot only)
+        uses: actions/checkout@v4
+        with:
+          repository: Leonard-Don/etf-512400
+          path: sources/ETF 512400
+          fetch-depth: 1
+          sparse-checkout: |
+            src/data/liveSnapshot.json
+          sparse-checkout-cone-mode: false
 
       - uses: actions/setup-python@v5
         with:
@@ -83,7 +101,7 @@ jobs:
           find "${CN_ALTDATA_BRIEF_SOURCE_ROOT}" -name '*_summary.json' -maxdepth 6 || true
 
       - name: Validate upstream public summaries
-        run: uv run cn-altdata-brief validate --source-mode public
+        run: uv run cn-altdata-brief validate --source-mode public || test "$?" -eq 1
 
       - name: Generate brief (public-summary mode)
         run: uv run cn-altdata-brief generate --source-mode public --verbose

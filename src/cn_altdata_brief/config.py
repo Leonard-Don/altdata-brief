@@ -54,9 +54,30 @@ SOURCE_REPO_DIRS: dict[str, Path] = {
 }
 
 #: Public-summary filenames each source repo is expected to commit.
+#:
+#: v0.4 promotes ALL four source adapters to a public-summary path.
+#:
+#: * super_pricing: ``data/public/alt_data_summary.json`` (v0.3, committed).
+#: * index_research: ``data/public/index_research_summary.json`` (v0.3, committed).
+#: * quant_trading: ``data/public/quant_summary.json`` (v0.4, expected from
+#:   a parallel agent dispatch; the adapter falls back to cache when absent).
+#: * etf_512400: ``src/data/liveSnapshot.json`` — the JS app's snapshot is
+#:   *intentionally* committed (the "protected dirty" pattern), so the
+#:   on-disk artifact IS the public summary. The filename is non-standard
+#:   on purpose — see :func:`public_summary_path` for the path override.
 PUBLIC_SUMMARY_FILENAMES: dict[str, str] = {
     "super_pricing": "alt_data_summary.json",
     "index_research": "index_research_summary.json",
+    "quant_trading": "quant_summary.json",
+    "etf_512400": "liveSnapshot.json",
+}
+
+#: Per-source override of the ``data/public/`` subpath. By default the path
+#: is ``<repo>/data/public/<filename>``; entries here override the prefix.
+#: ETF 512400 ships its snapshot under ``src/data/`` for the JS app, so the
+#: "public summary" lives there rather than under ``data/public/``.
+_PUBLIC_SUMMARY_SUBPATH: dict[str, tuple[str, ...]] = {
+    "etf_512400": ("src", "data"),
 }
 
 
@@ -65,11 +86,17 @@ def public_summary_path(source_key: str, *, root: Path | None = None) -> Path:
 
     ``root`` overrides the discovered source-repo root and is used by tests
     to point at an isolated tmp_path.
+
+    The subpath defaults to ``data/public/`` but per-source overrides
+    (see :data:`_PUBLIC_SUMMARY_SUBPATH`) are honored — used by the ETF
+    adapter whose JS app commits the snapshot under ``src/data/``.
     """
     if source_key not in PUBLIC_SUMMARY_FILENAMES:
         raise KeyError(f"no public summary defined for source {source_key!r}")
     base = root if root is not None else SOURCE_REPO_DIRS.get(source_key, DEFAULT_SOURCE_REPOS_ROOT)
-    return base / "data" / "public" / PUBLIC_SUMMARY_FILENAMES[source_key]
+    subpath = _PUBLIC_SUMMARY_SUBPATH.get(source_key, ("data", "public"))
+    leaf = PUBLIC_SUMMARY_FILENAMES[source_key]
+    return base.joinpath(*subpath, leaf)
 
 
 # ---------------------------------------------------------------------------

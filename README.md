@@ -3,9 +3,10 @@
 [![CI](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml/badge.svg)](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Version](https://img.shields.io/badge/version-v0.3.0-1f6feb)
-![Sources](https://img.shields.io/badge/sources-4%20projects-6f42c1)
+![Version](https://img.shields.io/badge/version-v0.4.0-1f6feb)
+![Sources](https://img.shields.io/badge/sources-4%2F4%20public-2da44e)
 ![Cadence](https://img.shields.io/badge/cadence-T%2B0%20daily-2da44e)
+![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-%F0%9F%9F%A2%20ready-2da44e)
 
 `cn-altdata-brief` 是一个每个交易日自动生成的另类数据研究简报，
 合成自我自己运行的 6 个量化项目的真实信号缓存。它是一份**可订阅、可引用、可复现**的中国 A 股 alt-data 视角。
@@ -97,9 +98,9 @@
 |---|---|---|
 | **v0.1** | 4 个 cache 源接入 + 5 段式日报 + 4 张图 + GitHub Actions 模板 | ✅ 完成 |
 | **v0.2** | 3 句式「本日观察」+ 数据质量 `validate` + RSS feed + 发布前保护 | ✅ 完成 |
-| **v0.3** | `data/public/*_summary.json` 优先 + `--source-mode` + GitHub Actions 通路 | ✅ 当前 |
-| **v0.4** | LLM 改写「本日观察」段，rule-based 输出作 ground truth | 计划中 |
-| **v0.5** | Substack 自动发布 + 邮件订阅入口 | 计划中 |
+| **v0.3** | `data/public/*_summary.json` 优先 + `--source-mode` + GitHub Actions 通路 | ✅ 完成 |
+| **v0.4** | **4/4 adapter 全部接 public summary + 本地 e2e 烟测脚本 + CI fixture 通路 + `resolve_source()`** | ✅ 当前 |
+| **v0.5** | Substack 自动发布 + 邮件订阅入口 + LLM 改写「本日观察」段 | 计划中 |
 | **v1.0** | 付费墙上线 + Weekly Deep-Dive 实战 | 计划中 |
 
 ## 8. 快速开始 / Quickstart
@@ -118,14 +119,49 @@ uv run cn-altdata-brief generate --source-mode public  # CI mode, public summari
 
 ### 数据源解析顺序 / Source resolution
 
-从 v0.3 开始，每个 adapter 按以下顺序解析数据：
+从 v0.3 开始，每个 adapter 按以下顺序解析数据；v0.4 把这一套套到全部 4 个 adapter 上：
 
 1. **Live endpoint** —— 仅在 `--source-mode live` 或 `CN_ALTDATA_BRIEF_LIVE=1` 时尝试。
-2. **Public summary** —— 上游项目仓库中的 `data/public/<source>_summary.json`。这是 GitHub Actions 唯一能读到的路径（沙箱无 macOS 本地缓存）。
+2. **Public summary** —— 上游项目仓库中的 `data/public/<source>_summary.json`（ETF 512400 例外，使用 `src/data/liveSnapshot.json`，因 JS app 已经提交进 git，属"public-by-default"）。GitHub Actions 沙箱唯一能读到的路径。
 3. **Cache JSON / CSV** —— 仅本机，作为兜底。
 
 `--source-mode public` 跳过 #3，缺失即报错——这是 CI 用的严格模式。
 `--source-mode cache` 跳过 #1/#2，强制读本机 cache（用于回放历史）。
+`cn-altdata-brief validate` 在最末尾打印每个 adapter 的解析路径 + mtime，便于排查"为什么这次没读 public 而读了 cache"。
+
+```mermaid
+flowchart LR
+    subgraph upstream[上游 6 项目]
+        SP[super-pricing-system<br/>data/public/alt_data_summary.json]
+        QT[quant-trading-system<br/>data/public/quant_summary.json]
+        IX[index-inclusion-research<br/>data/public/index_research_summary.json]
+        ETF[ETF 512400<br/>src/data/liveSnapshot.json<br/><i>public-by-default</i>]
+    end
+    subgraph adapters[adapters/]
+        AS[SuperPricingAdapter]
+        AQ[QuantTradingAdapter]
+        AI[IndexResearchAdapter]
+        AE[ETF512400Adapter]
+    end
+    SP --> AS
+    QT --> AQ
+    IX --> AI
+    ETF --> AE
+    AS & AQ & AI & AE --> CLI[cli.py<br/>--source-mode public]
+    CLI --> Brief[output/briefs/YYYY-MM-DD.md]
+    style ETF stroke-dasharray: 5 5
+```
+
+### 本地 e2e 烟测 / Local end-to-end smoke test
+
+v0.4 新增 `scripts/smoke_e2e.sh`：在 tmp scratch 目录里复制 4 个上游的 public-summary 文件，模拟 GitHub Actions 环境跑 `validate + generate`：
+
+```bash
+bash scripts/smoke_e2e.sh              # 跑本机真实上游
+SMOKE_FIXTURE=1 bash scripts/smoke_e2e.sh   # 跑 tests/fixtures/ 里的固定夹具（CI 用这条）
+```
+
+整套流程目标 <30 秒。CI 用 fixture 模式（避免跨仓依赖），本地用真实模式（兜实情）。
 
 更深入：[docs/architecture.md](docs/architecture.md) · [docs/monetization_plan.md](docs/monetization_plan.md)
 

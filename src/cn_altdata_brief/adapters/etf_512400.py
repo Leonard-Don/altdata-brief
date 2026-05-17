@@ -1,4 +1,36 @@
-"""Adapter for ``ETF 512400`` — non-ferrous metals ETF snapshot."""
+"""Adapter for ``ETF 512400`` — non-ferrous metals ETF snapshot.
+
+Resolution order (set per-call via :class:`SourceConfig`)
+--------------------------------------------------------
+
+The ETF 512400 project is a JavaScript app that regenerates
+``src/data/liveSnapshot.json`` via ``npm run refresh``. That snapshot is
+**committed** to git (the "protected dirty" pattern — see the upstream
+README) and therefore IS the public summary by accident: GitHub Actions
+can read it directly from a shallow checkout, no separate publishing
+step needed.
+
+v0.4 makes this explicit:
+
+1. **Live endpoint** — not implemented (the JS app has no HTTP service
+   we control). Reserved for a future Node-side adapter.
+2. **Public summary** — ``<source-repo>/src/data/liveSnapshot.json``.
+   This is the SAME file as #3 but exposed via the public-summary
+   contract so ``--source-mode public`` does not error out. Marked
+   ``public_by_default=True`` in the payload metadata.
+3. **Cache** — ditto. Aliased to the public summary path. There is no
+   separate "cache" location for this source — the JS app's snapshot
+   is the single source of truth.
+
+The aliasing means the file is read exactly once regardless of
+``--source-mode``, and the synthesis layer keeps reading the same
+normalized shape:
+
+* latest price + change %
+* NAV daily return
+* how many required sources are OK vs. fallback (proxy for trust)
+* commodity-driver health summary
+"""
 
 from __future__ import annotations
 
@@ -6,21 +38,29 @@ from pathlib import Path
 from typing import Any
 
 from cn_altdata_brief.adapters.base import AdapterBase, AdapterPayload, AdapterUnavailable
+from cn_altdata_brief.config import (
+    SOURCE_REPO_DIRS,
+    SourceConfig,
+    load_source_config,
+    public_summary_path,
+)
 
-DEFAULT_ROOT = Path("/Users/leonardodon/ETF 512400")
+DEFAULT_ROOT = SOURCE_REPO_DIRS["etf_512400"]
 DEFAULT_SNAPSHOT = DEFAULT_ROOT / "src" / "data" / "liveSnapshot.json"
+DEFAULT_PUBLIC_SUMMARY = public_summary_path("etf_512400")  # equals DEFAULT_SNAPSHOT
 
 
 class ETF512400Adapter(AdapterBase):
     """Reads the ETF 512400 daily snapshot JSON.
 
-    The snapshot carries quote, NAV trend, source-health board, and
-    commodity drivers. The brief's *ETF flow* section needs:
+    Source preference is governed by :class:`SourceConfig` (env var
+    ``CN_ALTDATA_BRIEF_PREFERENCE`` or ``--source-mode``).
 
-    * latest price + change %
-    * NAV daily return
-    * how many required sources are OK vs. fallback (proxy for trust)
-    * commodity-driver health summary
+    Unlike the other adapters, ``public`` and ``cache`` resolve to the
+    same on-disk path because the upstream JS app commits its snapshot
+    directly. The adapter still reports ``source_mode="public"`` when
+    public preference is active so the validate command can confirm
+    ``--source-mode public`` actually worked end-to-end.
     """
 
     source_name = "ETF-512400"
@@ -30,11 +70,53 @@ class ETF512400Adapter(AdapterBase):
         self,
         *,
         snapshot_path: Path | None = None,
+        public_summary: Path | None = None,
         allow_live: bool | None = None,
+        config: SourceConfig | None = None,
     ) -> None:
         super().__init__(allow_live=allow_live)
         self.snapshot_path = Path(snapshot_path) if snapshot_path else DEFAULT_SNAPSHOT
+        # By design, the public summary IS the snapshot. Tests can override
+        # either independently, but in production they point at the same path.
+        self.public_summary = (
+            Path(public_summary) if public_summary
+            else (self.snapshot_path if snapshot_path else DEFAULT_PUBLIC_SUMMARY)
+        )
+        preference = "cache_only" if snapshot_path is not None and public_summary is None else None
+        self.config = config if config is not None else load_source_config(
+            preference=preference,
+            allow_live=allow_live,
+        )
 
+    # ------------------------------------------------------------------
+    # Resolution dispatch
+    # ------------------------------------------------------------------
+
+    def fetch(self) -> AdapterPayload:
+        """Public-by-default: same file regardless of preference.
+
+        The ``--source-mode public`` path still raises ``AdapterUnavailable``
+        when the snapshot file is missing — that's the validate-time
+        signal the JS app needs a refresh.
+        """
+        cfg = self.config
+
+        # Public summary preferred AND available — the common path.
+        if cfg.prefer_public and self.public_summary.exists():
+            return self._load_from_public_summary()
+
+        # public_only and the file is missing: fail fast with a clear note.
+        if not cfg.allow_cache:
+            raise AdapterUnavailable(
+                f"ETF 512400 liveSnapshot.json missing at {self.public_summary}; "
+                "this source is public-by-default — run `npm run refresh` "
+                "upstream so the snapshot gets regenerated (and committed)."
+            )
+
+        return self.fetch_cached()
+
+    # ------------------------------------------------------------------
+    # Implementations
     # ------------------------------------------------------------------
 
     def fetch_cached(self) -> AdapterPayload:
@@ -46,10 +128,44 @@ class ETF512400Adapter(AdapterBase):
         payload = self.read_json(self.snapshot_path)
         data = _normalize_snapshot(payload)
         data["source_mode"] = "cache"
+        data["public_by_default"] = True
         return AdapterPayload(
             source=self.source_name,
             fetched_at=self.now_iso(),
             cache_path=self.snapshot_path,
+            live=False,
+            data=data,
+        )
+
+    def _load_from_public_summary(
+        self, *, summary_path: Path | None = None
+    ) -> AdapterPayload:
+        """Alias of :meth:`fetch_cached` — but reports ``source_mode="public"``.
+
+        The on-disk artifact is the same file. We re-mark the source_mode
+        so the validate layer can distinguish "we honored
+        ``--source-mode public``" from "we fell back to cache".
+
+        The ``public_by_default`` flag is set on the payload metadata so
+        downstream sections / scripts that audit "which sources have a
+        proper public summary path" don't accidentally treat ETF 512400
+        as missing a public path.
+        """
+        path = summary_path if summary_path is not None else self.public_summary
+        if not path.exists():
+            raise AdapterUnavailable(
+                f"ETF 512400 liveSnapshot.json missing at {path}; "
+                "public-by-default but the upstream commit has not landed."
+            )
+        payload = self.read_json(path)
+        data = _normalize_snapshot(payload)
+        data["source_mode"] = "public"
+        data["public_summary_path"] = str(path)
+        data["public_by_default"] = True
+        return AdapterPayload(
+            source=self.source_name,
+            fetched_at=self.now_iso(),
+            cache_path=path,
             live=False,
             data=data,
         )

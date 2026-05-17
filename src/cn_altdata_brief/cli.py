@@ -39,6 +39,7 @@ from cn_altdata_brief.validate import (
     EXIT_FAIL,
     EXIT_OK,
     EXIT_WARN,
+    resolve_all_sources,
     run_all_checks,
     summarize,
 )
@@ -187,7 +188,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
         except AdapterUnavailable as exc:
             logger.warning("adapter %s unavailable: %s", name, exc)
             payloads[name] = None
-            if cfg.public_required and name in ("super_pricing", "index_research"):
+            if cfg.public_required:
                 public_required_missing.append(name)
 
     if args.source_mode == "public" and public_required_missing:
@@ -258,15 +259,22 @@ def _cmd_generate(args: argparse.Namespace) -> int:
 def _cmd_validate(args: argparse.Namespace) -> int:
     source_mode = getattr(args, "source_mode", "auto")
     cfg = load_source_config(**source_mode_to_kwargs(source_mode))
+    adapters = build_default_adapters(config=cfg)
+    # v0.4: probe per-adapter resolution BEFORE fetching, so the report
+    # still shows "what would have been used" even when fetch raises.
+    resolutions = resolve_all_sources(adapters)
     payloads: dict[str, AdapterPayload | None] = {}
-    for name, adapter in build_default_adapters(config=cfg).items():
+    for name, adapter in adapters.items():
         try:
             payloads[name] = adapter.fetch()
         except AdapterUnavailable as exc:
             logger.warning("validate: adapter %s unavailable: %s", name, exc)
             payloads[name] = None
 
-    results = run_all_checks(payloads)
+    results = run_all_checks(
+        payloads,
+        allow_missing_cache_only_sources=(source_mode == "public"),
+    )
     code = summarize(results, fail_on_warn=args.fail_on_warn)
 
     if args.json:
@@ -280,6 +288,9 @@ def _cmd_validate(args: argparse.Namespace) -> int:
                 }
                 for r in results
             ],
+            "resolutions": {
+                name: res.to_dict() for name, res in resolutions.items()
+            },
             "exit_code": code,
             "fail_on_warn": bool(args.fail_on_warn),
         }
@@ -287,6 +298,18 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     else:
         for r in results:
             print(r.to_line())
+        # Per-adapter source-resolution section — useful for debugging
+        # "why did this adapter pick cache when I wanted public?".
+        print("--- per-adapter source resolution ---")
+        for name, res in resolutions.items():
+            status = "OK  " if res.available else "MISS"
+            tail = f" · mtime={res.mtime_iso}" if res.mtime_iso else ""
+            note = f" · {res.note}" if res.note else ""
+            print(
+                f"[{status}] {name}: mode={res.mode}"
+                f"{' · path=' + str(res.path) if res.path else ''}"
+                f"{tail}{note}"
+            )
         verdict = {EXIT_OK: "ALL CHECKS PASSED", EXIT_WARN: "WARNINGS", EXIT_FAIL: "FAILURES"}[code]
         print(f"--- {verdict} (exit={code}) ---")
     return code

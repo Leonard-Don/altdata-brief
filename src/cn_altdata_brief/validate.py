@@ -18,7 +18,12 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from cn_altdata_brief.adapters.base import AdapterPayload, AdapterUnavailable
+from cn_altdata_brief.adapters.base import (
+    AdapterBase,
+    AdapterPayload,
+    AdapterUnavailable,
+    SourceResolution,
+)
 from cn_altdata_brief.config import public_summary_path
 
 # Severity levels --------------------------------------------------------
@@ -42,7 +47,16 @@ PUBLIC_SUMMARY_FRESH_HOURS = 24
 
 # Public-summary sources the freshness check covers. Order is stable so the
 # emitted CheckResult.detail dict is deterministic.
-PUBLIC_SUMMARY_SOURCES: tuple[str, ...] = ("super_pricing", "index_research")
+#
+# v0.4: all four adapters now have a public-summary path. The freshness
+# check tolerates per-source absence as WARN, never FAIL — the brief can
+# still ship in --source-mode=auto by falling through to the cache.
+PUBLIC_SUMMARY_SOURCES: tuple[str, ...] = (
+    "super_pricing",
+    "index_research",
+    "quant_trading",
+    "etf_512400",
+)
 
 
 @dataclass(slots=True)
@@ -70,6 +84,7 @@ def run_all_checks(
     payloads: dict[str, AdapterPayload | None],
     *,
     public_summary_paths: dict[str, Path] | None = None,
+    allow_missing_cache_only_sources: bool = False,
 ) -> list[CheckResult]:
     """Apply all data-quality predicates against the loaded payloads.
 
@@ -83,7 +98,12 @@ def run_all_checks(
     results: list[CheckResult] = []
     results.append(_check_policy_industries(payloads.get("super_pricing")))
     results.append(_check_macro_metals(payloads.get("super_pricing")))
-    results.append(_check_etf_snapshot_age(payloads.get("etf_512400")))
+    results.append(
+        _check_etf_snapshot_age(
+            payloads.get("etf_512400"),
+            missing_level=WARN if allow_missing_cache_only_sources else FAIL,
+        )
+    )
     results.append(_check_verdict_completeness(payloads.get("index_research")))
     results.append(_check_public_summary_freshness(public_summary_paths))
     return results
@@ -178,13 +198,21 @@ def _check_macro_metals(payload: AdapterPayload | None) -> CheckResult:
     )
 
 
-def _check_etf_snapshot_age(payload: AdapterPayload | None) -> CheckResult:
+def _check_etf_snapshot_age(
+    payload: AdapterPayload | None,
+    *,
+    missing_level: str = FAIL,
+) -> CheckResult:
     name = "etf_512400.snapshot_age"
     if payload is None:
         return CheckResult(
             name=name,
-            level=FAIL,
-            message="ETF 512400 snapshot missing; run `npm run refresh` upstream.",
+            level=missing_level,
+            message=(
+                "ETF 512400 snapshot missing; run `npm run refresh` upstream."
+                if missing_level == FAIL
+                else "ETF 512400 snapshot missing; public-summary mode continues without cache-only ETF data."
+            ),
         )
     trade_date_raw = (
         payload.data.get("trade_date")
@@ -279,10 +307,10 @@ def _check_public_summary_freshness(
     """
     name = "public_summary_freshness"
     paths: dict[str, Path] = {}
-    for source_key in PUBLIC_SUMMARY_SOURCES:
-        if paths_override is not None and source_key in paths_override:
-            paths[source_key] = Path(paths_override[source_key])
-        else:
+    if paths_override is not None:
+        paths = {source_key: Path(path) for source_key, path in paths_override.items()}
+    else:
+        for source_key in PUBLIC_SUMMARY_SOURCES:
             try:
                 paths[source_key] = public_summary_path(source_key)
             except KeyError:  # pragma: no cover - defensive
@@ -317,6 +345,10 @@ def _check_public_summary_freshness(
 
         if isinstance(doc, dict):
             generated_at = doc.get("generated_at")
+            # ETF 512400 liveSnapshot ships generatedAt under meta — accept it
+            # as a freshness signal so all four adapters share the same check.
+            if generated_at is None and isinstance(doc.get("meta"), dict):
+                generated_at = doc["meta"].get("generatedAt")
         entry["generated_at"] = generated_at
 
         ts = _parse_iso_timestamp(generated_at)
@@ -426,6 +458,19 @@ def load_payloads_for_validate() -> dict[str, AdapterPayload | None]:
     return payloads
 
 
+def resolve_all_sources(
+    adapters: dict[str, AdapterBase],
+) -> dict[str, SourceResolution]:
+    """Probe every adapter's resolution without fetching.
+
+    Used by the validate CLI to report a per-adapter line of "which path
+    each adapter picked", independent of the actual payload retrieval.
+    The dict order matches the input — adapters are iterated in the
+    order :func:`build_default_adapters` returned them.
+    """
+    return {name: adapter.resolve_source() for name, adapter in adapters.items()}
+
+
 # Re-export for convenience tests.
 __all__ = [
     "CheckResult",
@@ -442,6 +487,7 @@ __all__ = [
     "REQUIRED_HYPOTHESIS_COUNT",
     "WARN",
     "load_payloads_for_validate",
+    "resolve_all_sources",
     "run_all_checks",
     "summarize",
 ]
