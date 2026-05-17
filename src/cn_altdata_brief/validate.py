@@ -11,12 +11,15 @@ upstream (cache stale, file missing, all-zero signals).
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from cn_altdata_brief.adapters.base import AdapterPayload, AdapterUnavailable
+from cn_altdata_brief.config import public_summary_path
 
 # Severity levels --------------------------------------------------------
 INFO = "info"
@@ -35,6 +38,11 @@ MIN_POLICY_INDUSTRIES = 3
 MIN_MACRO_METALS = 2
 MAX_ETF_SNAPSHOT_AGE_DAYS = 7
 REQUIRED_HYPOTHESIS_COUNT = 7
+PUBLIC_SUMMARY_FRESH_HOURS = 24
+
+# Public-summary sources the freshness check covers. Order is stable so the
+# emitted CheckResult.detail dict is deterministic.
+PUBLIC_SUMMARY_SOURCES: tuple[str, ...] = ("super_pricing", "index_research")
 
 
 @dataclass(slots=True)
@@ -58,17 +66,26 @@ class CheckResult:
 # ----------------------------------------------------------------------
 
 
-def run_all_checks(payloads: dict[str, AdapterPayload | None]) -> list[CheckResult]:
+def run_all_checks(
+    payloads: dict[str, AdapterPayload | None],
+    *,
+    public_summary_paths: dict[str, Path] | None = None,
+) -> list[CheckResult]:
     """Apply all data-quality predicates against the loaded payloads.
 
     The same payload dict the CLI feeds into ``_synthesize`` is reused
     here — keep validate cheap and idempotent.
+
+    ``public_summary_paths`` lets tests inject custom paths for the new
+    ``public_summary_freshness`` check. In production the paths are
+    resolved from :func:`cn_altdata_brief.config.public_summary_path`.
     """
     results: list[CheckResult] = []
     results.append(_check_policy_industries(payloads.get("super_pricing")))
     results.append(_check_macro_metals(payloads.get("super_pricing")))
     results.append(_check_etf_snapshot_age(payloads.get("etf_512400")))
     results.append(_check_verdict_completeness(payloads.get("index_research")))
+    results.append(_check_public_summary_freshness(public_summary_paths))
     return results
 
 
@@ -247,6 +264,120 @@ def _check_verdict_completeness(payload: AdapterPayload | None) -> CheckResult:
     )
 
 
+def _check_public_summary_freshness(
+    paths_override: dict[str, Path] | None = None,
+) -> CheckResult:
+    """Verify each expected public summary file exists and is fresh.
+
+    Severity:
+        * INFO  — every expected file exists with a ``generated_at`` within
+          ``PUBLIC_SUMMARY_FRESH_HOURS``.
+        * WARN  — a file is missing OR ``generated_at`` is older than the
+          freshness window OR unparsable.
+        * (never FAIL — the brief can still publish from cache; this check
+          exists to flag the GitHub Actions path's input freshness.)
+    """
+    name = "public_summary_freshness"
+    paths: dict[str, Path] = {}
+    for source_key in PUBLIC_SUMMARY_SOURCES:
+        if paths_override is not None and source_key in paths_override:
+            paths[source_key] = Path(paths_override[source_key])
+        else:
+            try:
+                paths[source_key] = public_summary_path(source_key)
+            except KeyError:  # pragma: no cover - defensive
+                continue
+
+    per_source: dict[str, dict[str, Any]] = {}
+    now = datetime.now(UTC)
+    threshold = timedelta(hours=PUBLIC_SUMMARY_FRESH_HOURS)
+    worst_level = INFO
+    messages: list[str] = []
+
+    for source_key, path in paths.items():
+        entry: dict[str, Any] = {"path": str(path)}
+        if not path.exists():
+            entry.update({"present": False, "age_hours": None, "generated_at": None})
+            messages.append(f"{source_key}: missing")
+            worst_level = _escalate(worst_level, WARN)
+            per_source[source_key] = entry
+            continue
+
+        entry["present"] = True
+        generated_at: str | None = None
+        try:
+            with path.open(encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            entry.update({"generated_at": None, "age_hours": None, "parse_error": True})
+            messages.append(f"{source_key}: unreadable")
+            worst_level = _escalate(worst_level, WARN)
+            per_source[source_key] = entry
+            continue
+
+        if isinstance(doc, dict):
+            generated_at = doc.get("generated_at")
+        entry["generated_at"] = generated_at
+
+        ts = _parse_iso_timestamp(generated_at)
+        if ts is None:
+            entry["age_hours"] = None
+            messages.append(f"{source_key}: unparsable generated_at={generated_at!r}")
+            worst_level = _escalate(worst_level, WARN)
+            per_source[source_key] = entry
+            continue
+
+        age = now - ts
+        entry["age_hours"] = round(age.total_seconds() / 3600.0, 2)
+        if age > threshold:
+            messages.append(
+                f"{source_key}: stale ({entry['age_hours']}h > {PUBLIC_SUMMARY_FRESH_HOURS}h)"
+            )
+            worst_level = _escalate(worst_level, WARN)
+        else:
+            messages.append(f"{source_key}: ok ({entry['age_hours']}h)")
+        per_source[source_key] = entry
+
+    detail = {
+        "freshness_window_hours": PUBLIC_SUMMARY_FRESH_HOURS,
+        "sources": per_source,
+    }
+    if worst_level == INFO:
+        return CheckResult(
+            name=name,
+            level=INFO,
+            message=f"all public summaries fresh within {PUBLIC_SUMMARY_FRESH_HOURS}h.",
+            detail=detail,
+        )
+    return CheckResult(
+        name=name,
+        level=WARN,
+        message="; ".join(messages) if messages else "issues found",
+        detail=detail,
+    )
+
+
+def _escalate(current: str, incoming: str) -> str:
+    rank = {INFO: 0, WARN: 1, FAIL: 2}
+    return current if rank.get(current, 0) >= rank.get(incoming, 0) else incoming
+
+
+def _parse_iso_timestamp(raw: Any) -> datetime | None:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        normalized = text.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
 # -- shared helpers -----------------------------------------------------
 
 
@@ -306,6 +437,8 @@ __all__ = [
     "MAX_ETF_SNAPSHOT_AGE_DAYS",
     "MIN_MACRO_METALS",
     "MIN_POLICY_INDUSTRIES",
+    "PUBLIC_SUMMARY_FRESH_HOURS",
+    "PUBLIC_SUMMARY_SOURCES",
     "REQUIRED_HYPOTHESIS_COUNT",
     "WARN",
     "load_payloads_for_validate",

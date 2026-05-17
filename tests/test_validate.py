@@ -115,10 +115,20 @@ def test_summarize_exit_codes() -> None:
 # -- run_all_checks + CLI integration ----------------------------------
 
 
-def test_run_all_checks_against_fixtures(all_payloads) -> None:
-    results = run_all_checks(all_payloads)
-    assert len(results) == 4
+def test_run_all_checks_against_fixtures(all_payloads, tmp_path: Path) -> None:
+    # Inject empty paths so the new public_summary_freshness check does not
+    # accidentally pass-or-fail based on the maintainer's laptop state.
+    results = run_all_checks(
+        all_payloads,
+        public_summary_paths={
+            "super_pricing": tmp_path / "missing_sp.json",
+            "index_research": tmp_path / "missing_ix.json",
+        },
+    )
+    assert len(results) == 5
     assert all(r.level in (INFO, WARN, FAIL) for r in results)
+    names = [r.name for r in results]
+    assert "public_summary_freshness" in names
 
 
 def test_cli_validate_human_output(
@@ -130,6 +140,7 @@ def test_cli_validate_human_output(
     assert "macro_hf.metals_with_weekly_change" in out
     assert "etf_512400.snapshot_age" in out
     assert "index_research.verdict_completeness" in out
+    assert "public_summary_freshness" in out
     assert code in (EXIT_OK, EXIT_WARN)
 
 
@@ -138,7 +149,7 @@ def test_cli_validate_json_output(
 ) -> None:
     code = main(["validate", "--json"])
     parsed = json.loads(capsys.readouterr().out)
-    assert len(parsed["checks"]) == 4
+    assert len(parsed["checks"]) == 5
     assert parsed["exit_code"] == code
 
 
@@ -149,3 +160,64 @@ def test_cli_validate_fail_on_warn_escalates(patched_default_paths: None) -> Non
         assert code_strict == EXIT_FAIL
     else:
         assert code_strict in (EXIT_OK, EXIT_FAIL)
+
+
+# -- public_summary_freshness check ------------------------------------
+
+
+def _write_summary(path: Path, generated_at: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"generated_at": generated_at, "schema_version": 1}),
+        encoding="utf-8",
+    )
+
+
+def test_public_summary_freshness_all_fresh(tmp_path: Path) -> None:
+    sp_path = tmp_path / "sp" / "alt_data_summary.json"
+    ix_path = tmp_path / "ix" / "index_research_summary.json"
+    now_iso = datetime.now(UTC).replace(microsecond=0).isoformat()
+    _write_summary(sp_path, now_iso)
+    _write_summary(ix_path, now_iso)
+    res = validate_mod._check_public_summary_freshness(
+        {"super_pricing": sp_path, "index_research": ix_path}
+    )
+    assert res.level == INFO
+    assert "fresh" in res.message
+    assert res.detail is not None
+    assert res.detail["sources"]["super_pricing"]["present"] is True
+
+
+def test_public_summary_freshness_missing_warns(tmp_path: Path) -> None:
+    res = validate_mod._check_public_summary_freshness(
+        {
+            "super_pricing": tmp_path / "no" / "sp.json",
+            "index_research": tmp_path / "no" / "ix.json",
+        }
+    )
+    assert res.level == WARN
+    assert "missing" in res.message
+
+
+def test_public_summary_freshness_stale_warns(tmp_path: Path) -> None:
+    sp_path = tmp_path / "sp" / "alt_data_summary.json"
+    ix_path = tmp_path / "ix" / "index_research_summary.json"
+    # 48h-old timestamps
+    stale = (datetime.now(UTC) - timedelta(hours=48)).replace(microsecond=0).isoformat()
+    _write_summary(sp_path, stale)
+    _write_summary(ix_path, stale)
+    res = validate_mod._check_public_summary_freshness(
+        {"super_pricing": sp_path, "index_research": ix_path}
+    )
+    assert res.level == WARN
+    assert "stale" in res.message
+
+
+def test_public_summary_freshness_unparsable_generated_at(tmp_path: Path) -> None:
+    sp_path = tmp_path / "sp.json"
+    sp_path.write_text(json.dumps({"generated_at": "not a date"}), encoding="utf-8")
+    # The index one we just make missing.
+    res = validate_mod._check_public_summary_freshness(
+        {"super_pricing": sp_path, "index_research": tmp_path / "missing.json"}
+    )
+    assert res.level == WARN

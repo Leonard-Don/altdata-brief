@@ -22,6 +22,10 @@ from typing import Any
 from cn_altdata_brief import __version__
 from cn_altdata_brief.adapters import build_default_adapters
 from cn_altdata_brief.adapters.base import AdapterPayload, AdapterUnavailable
+from cn_altdata_brief.config import (
+    load_source_config,
+    source_mode_to_kwargs,
+)
 from cn_altdata_brief.render import render_all_charts, render_brief_markdown, render_site_index
 from cn_altdata_brief.render.rss import render_feed
 from cn_altdata_brief.synthesis import (
@@ -38,6 +42,8 @@ from cn_altdata_brief.validate import (
     run_all_checks,
     summarize,
 )
+
+SOURCE_MODE_CHOICES = ("auto", "public", "cache", "live")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]  # src/cn_altdata_brief/cli.py -> project root
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "output"
@@ -111,6 +117,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Base URL used for RSS <link> elements (default: placeholder).",
     )
     gen.add_argument(
+        "--source-mode",
+        choices=SOURCE_MODE_CHOICES,
+        default="auto",
+        help=(
+            "Where to pull each adapter's data. "
+            "'auto' = live → public summary → cache (default). "
+            "'public' = public summary only (CI mode; fails fast if missing). "
+            "'cache' = bypass public summary, read internal caches. "
+            "'live' = same as auto but force-enables HTTP live endpoints."
+        ),
+    )
+    gen.add_argument(
         "-v", "--verbose", action="store_true", help="Verbose logging (subcommand-scoped alias)."
     )
 
@@ -128,6 +146,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Emit machine-readable JSON instead of the human summary.",
     )
     val.add_argument(
+        "--source-mode",
+        choices=SOURCE_MODE_CHOICES,
+        default="auto",
+        help=(
+            "Pass-through to the underlying adapter resolution; see "
+            "`generate --source-mode --help`."
+        ),
+    )
+    val.add_argument(
         "-v", "--verbose", action="store_true", help="Verbose logging (subcommand-scoped alias)."
     )
 
@@ -143,15 +170,34 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     charts_root = Path(args.charts_dir) / date
     briefs_dir.mkdir(parents=True, exist_ok=True)
 
-    adapters = build_default_adapters()
+    cfg = load_source_config(**source_mode_to_kwargs(args.source_mode))
+    adapters = build_default_adapters(config=cfg)
     payloads: dict[str, AdapterPayload | None] = {}
+    public_required_missing: list[str] = []
     for name, adapter in adapters.items():
         try:
             payloads[name] = adapter.fetch()
-            logger.info("adapter %s ok (live=%s)", name, payloads[name].live)
+            mode = payloads[name].data.get("source_mode", "?") if payloads[name] else "?"
+            logger.info(
+                "adapter %s ok (mode=%s, live=%s)",
+                name,
+                mode,
+                payloads[name].live,
+            )
         except AdapterUnavailable as exc:
             logger.warning("adapter %s unavailable: %s", name, exc)
             payloads[name] = None
+            if cfg.public_required and name in ("super_pricing", "index_research"):
+                public_required_missing.append(name)
+
+    if args.source_mode == "public" and public_required_missing:
+        print(
+            "ERROR: --source-mode=public requires public summaries for "
+            f"{public_required_missing}; rerun with --source-mode=auto for "
+            "local use, or commit/copy the public summary JSON into place.",
+            file=sys.stderr,
+        )
+        return 2
 
     if all(p is None for p in payloads.values()):
         print("ERROR: every adapter failed; cannot generate brief.", file=sys.stderr)
@@ -196,17 +242,24 @@ def _cmd_generate(args: argparse.Namespace) -> int:
 
     available_count = sum(1 for s in sections.values() if s.get("available"))
     feed_suffix = f" · feed={feed_path.name}" if feed_path else ""
+    mode_summary = ",".join(
+        f"{name}={(p.data.get('source_mode', '?') if p else 'missing')}"
+        for name, p in payloads.items()
+    )
     print(
         f"OK · wrote {brief_path} · {available_count}/5 sections available · "
-        f"{len(chart_paths)} charts{feed_suffix} · sources: "
+        f"{len(chart_paths)} charts{feed_suffix} · mode={args.source_mode} · "
+        f"resolved=[{mode_summary}] · sources: "
         + ", ".join(sorted(p.source for p in payloads.values() if p is not None))
     )
     return 0
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:
+    source_mode = getattr(args, "source_mode", "auto")
+    cfg = load_source_config(**source_mode_to_kwargs(source_mode))
     payloads: dict[str, AdapterPayload | None] = {}
-    for name, adapter in build_default_adapters().items():
+    for name, adapter in build_default_adapters(config=cfg).items():
         try:
             payloads[name] = adapter.fetch()
         except AdapterUnavailable as exc:

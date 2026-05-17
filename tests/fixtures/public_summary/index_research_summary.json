@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-17T02:05:00+00:00",
+  "verdicts": [
+    {
+      "hid": "H1",
+      "name_cn": "信息泄露与预运行",
+      "verdict": "证据不足",
+      "confidence": "中",
+      "key_label": "bootstrap p",
+      "key_value": 0.8748,
+      "p_value": 0.8748,
+      "n_obs": 436,
+      "track": "identification",
+      "evidence_tier": "core"
+    },
+    {
+      "hid": "H2",
+      "name_cn": "被动基金 AUM 差异",
+      "verdict": "部分支持",
+      "confidence": "中",
+      "key_label": "US AUM ratio",
+      "key_value": 13.48,
+      "p_value": null,
+      "n_obs": 17,
+      "track": "demand_curve",
+      "evidence_tier": "core"
+    },
+    {
+      "hid": "H3",
+      "name_cn": "散户 vs 机构结构",
+      "verdict": "支持",
+      "confidence": "高",
+      "key_label": "双通道命中率",
+      "key_value": 0.75,
+      "p_value": null,
+      "n_obs": 4,
+      "track": "price_pressure",
+      "evidence_tier": "supplementary"
+    },
+    {
+      "hid": "H4",
+      "name_cn": "卖空约束",
+      "verdict": "证据不足",
+      "confidence": "中",
+      "key_label": "regression p",
+      "key_value": 0.5366,
+      "p_value": 0.5366,
+      "n_obs": 436,
+      "track": "identification",
+      "evidence_tier": "supplementary"
+    },
+    {
+      "hid": "H5",
+      "name_cn": "涨跌停限制",
+      "verdict": "支持",
+      "confidence": "高",
+      "key_label": "limit_coef p",
+      "key_value": 0.0082,
+      "p_value": 0.0082,
+      "n_obs": 936,
+      "track": "identification",
+      "evidence_tier": "core"
+    },
+    {
+      "hid": "H6",
+      "name_cn": "指数权重可预测性",
+      "verdict": "证据不足",
+      "confidence": "中",
+      "key_label": "heavy-light spread",
+      "key_value": -0.019,
+      "p_value": null,
+      "n_obs": 67,
+      "track": "demand_curve",
+      "evidence_tier": "supplementary"
+    },
+    {
+      "hid": "H7",
+      "name_cn": "行业结构差异",
+      "verdict": "支持",
+      "confidence": "中",
+      "key_label": "US sector spread",
+      "key_value": 5.95,
+      "p_value": null,
+      "n_obs": 187,
+      "track": "identification",
+      "evidence_tier": "core"
+    }
+  ],
+  "pap": [
+    {
+      "hid": "H1",
+      "name_cn": "信息泄露与预运行",
+      "classification": "unchanged",
+      "baseline_verdict": "证据不足",
+      "current_verdict": "证据不足",
+      "notes": ""
+    },
+    {
+      "hid": "H2",
+      "name_cn": "被动基金 AUM 差异",
+      "classification": "changed",
+      "baseline_verdict": "supplementary",
+      "current_verdict": "部分支持",
+      "notes": "upgraded after CN proxy added"
+    }
+  ],
+  "sensitivity": {
+    "H5": {"core_p": 0.0082, "robust_p": 0.0091}
+  },
+  "hs300_rdd": {
+    "headline_coef": 0.0143,
+    "headline_p": 0.041,
+    "n_obs": 156
+  },
+  "figures": [
+    "cma_verdicts_forest.png",
+    "cma_verdicts_sensitivity.png"
+  ]
+}

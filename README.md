@@ -3,7 +3,7 @@
 [![CI](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml/badge.svg)](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Version](https://img.shields.io/badge/version-v0.2.0-1f6feb)
+![Version](https://img.shields.io/badge/version-v0.3.0-1f6feb)
 ![Sources](https://img.shields.io/badge/sources-4%20projects-6f42c1)
 ![Cadence](https://img.shields.io/badge/cadence-T%2B0%20daily-2da44e)
 
@@ -96,8 +96,9 @@
 | 版本 | 关键能力 | 状态 |
 |---|---|---|
 | **v0.1** | 4 个 cache 源接入 + 5 段式日报 + 4 张图 + GitHub Actions 模板 | ✅ 完成 |
-| **v0.2** | 3 句式「本日观察」+ 数据质量 `validate` + RSS feed + 发布前保护 | ✅ 当前 |
-| **v0.3** | LLM 改写「本日观察」段，rule-based 输出作 ground truth | 计划中 |
+| **v0.2** | 3 句式「本日观察」+ 数据质量 `validate` + RSS feed + 发布前保护 | ✅ 完成 |
+| **v0.3** | `data/public/*_summary.json` 优先 + `--source-mode` + GitHub Actions 通路 | ✅ 当前 |
+| **v0.4** | LLM 改写「本日观察」段，rule-based 输出作 ground truth | 计划中 |
 | **v0.5** | Substack 自动发布 + 邮件订阅入口 | 计划中 |
 | **v1.0** | 付费墙上线 + Weekly Deep-Dive 实战 | 计划中 |
 
@@ -108,13 +109,23 @@ git clone https://github.com/Leonard-Don/cn-altdata-brief.git
 cd cn-altdata-brief
 uv sync
 uv run cn-altdata-brief validate || test "$?" -eq 1  # WARN=1 可继续；FAIL=2 才阻断
-uv run cn-altdata-brief generate
+uv run cn-altdata-brief generate                     # auto: live → public → cache
+uv run cn-altdata-brief generate --source-mode public  # CI mode, public summaries only
 ```
 
 生成结果落在 `output/briefs/YYYY-MM-DD.md`、`output/charts/YYYY-MM-DD/*.png` 与 `output/feed.xml`。
 发布/CI 场景请使用 `uv run cn-altdata-brief validate --fail-on-warn`，把 WARN 也升级为阻断。
 
-若上游 4 个 cache 不在默认路径，当前仍需**手动复制**到对应位置；后续版本会暴露 CLI flag。
+### 数据源解析顺序 / Source resolution
+
+从 v0.3 开始，每个 adapter 按以下顺序解析数据：
+
+1. **Live endpoint** —— 仅在 `--source-mode live` 或 `CN_ALTDATA_BRIEF_LIVE=1` 时尝试。
+2. **Public summary** —— 上游项目仓库中的 `data/public/<source>_summary.json`。这是 GitHub Actions 唯一能读到的路径（沙箱无 macOS 本地缓存）。
+3. **Cache JSON / CSV** —— 仅本机，作为兜底。
+
+`--source-mode public` 跳过 #3，缺失即报错——这是 CI 用的严格模式。
+`--source-mode cache` 跳过 #1/#2，强制读本机 cache（用于回放历史）。
 
 更深入：[docs/architecture.md](docs/architecture.md) · [docs/monetization_plan.md](docs/monetization_plan.md)
 
