@@ -107,11 +107,12 @@
 git clone https://github.com/Leonard-Don/cn-altdata-brief.git
 cd cn-altdata-brief
 uv sync
-uv run cn-altdata-brief validate
+uv run cn-altdata-brief validate || test "$?" -eq 1  # WARN=1 可继续；FAIL=2 才阻断
 uv run cn-altdata-brief generate
 ```
 
 生成结果落在 `output/briefs/YYYY-MM-DD.md`、`output/charts/YYYY-MM-DD/*.png` 与 `output/feed.xml`。
+发布/CI 场景请使用 `uv run cn-altdata-brief validate --fail-on-warn`，把 WARN 也升级为阻断。
 
 若上游 4 个 cache 不在默认路径，当前仍需**手动复制**到对应位置；后续版本会暴露 CLI flag。
 
