@@ -1,6 +1,7 @@
 ---
 layout: default
 title: CN AltData Brief
+description: Daily research brief over China-equity alt-data, synthesized from 6 quant projects.
 ---
 
 # CN AltData Brief — 中国另类数据日报
@@ -9,17 +10,43 @@ title: CN AltData Brief
 > synthesized from 6 quant projects. Updated every trading day at 17:00 (UTC+8).
 > 中文为权威版本，English 为 LLM 翻译（保留事实，标注 source hash）。
 
-[RSS feed](feed.xml) ·
-[Source code](https://github.com/Leonard-Don/cn-altdata-brief)
+<section class="subscribe-bar" markdown="0">
+  <strong>订阅 / Subscribe:</strong>
+  <a class="sub-btn rss" href="feed.xml">RSS 2.0</a>
+  <a class="sub-btn atom" href="feed.atom">Atom 1.0</a>
+  <a class="sub-btn github" href="https://github.com/Leonard-Don/cn-altdata-brief">Source</a>
+</section>
+
+<section class="share-bar" markdown="0">
+  <strong>分享 / Share:</strong>
+  <a href="https://twitter.com/intent/tweet?text=CN%20AltData%20Brief&url=https%3A%2F%2Fleonard-don.github.io%2Fcn-altdata-brief">Twitter</a>
+  <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fleonard-don.github.io%2Fcn-altdata-brief">LinkedIn</a>
+  <a href="https://t.me/share/url?url=https%3A%2F%2Fleonard-don.github.io%2Fcn-altdata-brief&text=CN%20AltData%20Brief">Telegram</a>
+</section>
 
 ## 简报列表 / Briefs archive
 
-| 日期 / Date | 中文 / Chinese | English |
-|---|---|---|
-| _(暂无 / none yet)_ | — | — |
+| 日期 / Date | 预览 / Preview | 中文 / Chinese | English |
+|---|---|---|---|
+| _(暂无 / none yet)_ | — | — | — |
 
 _This template is replaced on every publish — the live archive is
 written by the Python publisher with all dated briefs sorted newest-first._
+
+<style>
+.subscribe-bar, .share-bar {
+  display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;
+  margin: 1rem 0; padding: 0.75rem;
+  background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 6px;
+}
+.sub-btn, .share-bar a {
+  padding: 4px 10px; border: 1px solid #d0d7de;
+  border-radius: 4px; background: #ffffff;
+  color: #0969da; text-decoration: none; font-size: 0.85rem;
+}
+.sub-btn:hover, .share-bar a:hover { background: #eaeef2; }
+table img { max-height: 48px; width: auto; border: 1px solid #d0d7de; border-radius: 3px; }
+</style>
 
 ---
 
