@@ -233,6 +233,11 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     brief_path = briefs_dir / f"{date}.md"
     brief_path.write_text(markdown, encoding="utf-8")
 
+    # v0.5: maintain a stable `latest.md` symlink so external readers
+    # (e.g. launchd cron jobs, RSS regenerators, publish branches) have
+    # a fixed filename to point at without knowing today's date stamp.
+    _refresh_latest_symlink(briefs_dir, brief_path)
+
     if not args.no_index:
         render_site_index(briefs_dir)
 
@@ -328,6 +333,29 @@ def _synthesize(payloads: dict[str, AdapterPayload | None]) -> dict[str, Any]:
             payloads.get("etf_512400"),
         ),
     }
+
+
+def _refresh_latest_symlink(briefs_dir: Path, brief_path: Path) -> None:
+    """Atomically refresh ``briefs_dir/latest.md`` to point at ``brief_path``.
+
+    On platforms without symlink support (rare on macOS but possible under
+    some Windows configs) we silently fall back to copying the markdown
+    content, so the file still exists. Errors are swallowed — the symlink
+    is a convenience, not a correctness invariant.
+    """
+    latest = briefs_dir / "latest.md"
+    target = brief_path.name  # relative within briefs_dir
+    try:
+        if latest.is_symlink() or latest.exists():
+            latest.unlink()
+        latest.symlink_to(target)
+    except OSError:
+        # Fallback: write the content directly. Better a stale file than
+        # crashing the daily run on a filesystem that disallows symlinks.
+        try:
+            latest.write_text(brief_path.read_text(encoding="utf-8"), encoding="utf-8")
+        except OSError:
+            pass
 
 
 def _relative_to(briefs_dir: Path, chart_path: Path) -> str:
