@@ -109,6 +109,8 @@ def test_observation_all_missing_returns_缺失() -> None:
     result = synthesize_observation(None, None, None, None)
     assert result["available"] is False
     assert "数据缺失" in result["sentences"][0]
+    assert result["raw_text"] == result["sentences"][0]
+    assert result["industries"] == []
 
 
 def test_observation_with_super_and_etf_produces_sentences(
@@ -120,6 +122,9 @@ def test_observation_with_super_and_etf_produces_sentences(
     assert result["available"] is True
     # v0.2 always emits exactly 3 sentences (framing / context / action).
     assert len(result["sentences"]) == 3
+    assert result["raw_text"] == "\n".join(result["sentences"])
+    assert "有色金属" in result["industries"]
+    assert "良好" not in result["industries"]
     framing, context, action = result["sentences"]
     assert framing.startswith("今日核心信号是")
     assert "近 7 日" in context

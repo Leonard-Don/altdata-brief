@@ -14,6 +14,7 @@ those for the real super-pricing narrative archive.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -38,6 +39,30 @@ class _Candidate:
     context: str
     action: str
     source_label: str
+
+
+_BOLDED_RE = re.compile(r"\*\*([^*]+)\*\*")
+_NON_INDUSTRY_BOLD_TOKENS = {"良好", "一般", "较弱", "未知", "OK", "WARN", "FAIL"}
+
+
+def _industries_from_candidate(cand: _Candidate) -> list[str]:
+    """Pull bolded industry / commodity names from a candidate's sentences.
+
+    The deterministic builders always emit ``**新能源汽车**`` style markup
+    around the name(s) the v0.7 LLM rephrase layer must preserve. Order is
+    framing → context → action; duplicates are de-duped while keeping the
+    first occurrence's position.
+    """
+    seen: dict[str, None] = {}
+    for chunk in (cand.framing, cand.context, cand.action):
+        for match in _BOLDED_RE.findall(chunk):
+            # Sometimes a candidate bolds a compound like "铜/铝" — split
+            # on the slash so the validator can match each side.
+            for piece in match.split("/"):
+                piece = piece.strip()
+                if piece and piece not in _NON_INDUSTRY_BOLD_TOKENS and piece not in seen:
+                    seen[piece] = None
+    return list(seen)
 
 
 def synthesize_observation(
@@ -87,10 +112,13 @@ def synthesize_observation(
             candidates.append(cand)
 
     if not candidates:
+        sentences = ["_数据缺失_：所有上游均未返回有效信号，今日无可生成观察。"]
         return {
             "available": False,
             "title": "本日观察",
-            "sentences": ["_数据缺失_：所有上游均未返回有效信号，今日无可生成观察。"],
+            "sentences": sentences,
+            "raw_text": "\n".join(sentences),
+            "industries": [],
             "sources": sources,
         }
 
@@ -101,6 +129,13 @@ def synthesize_observation(
         "available": True,
         "title": "本日观察",
         "sentences": sentences,
+        # v0.7: raw_text is the canonical deterministic prose used by the
+        # optional LLM rephrase layer. Joined with newlines so paraphrase
+        # boundaries remain visible to the model.
+        "raw_text": "\n".join(sentences),
+        # v0.7: keep the bolded industry/品种 names handy so the LLM
+        # validator can verify they survived the rewrite without re-parsing.
+        "industries": _industries_from_candidate(lead),
         "sources": sources,
     }
 
@@ -203,7 +238,7 @@ def _etf_candidate(payload: AdapterPayload) -> _Candidate | None:
         f"/{(payload.data.get('commodity_drivers') or {}).get('total', 0)} OK。"
     )
     action = (
-        f"若该信号延续 {SIGNAL_PERSISTENCE_DAYS} 日，可重点观察有色金属现货成交，"
+        f"若该信号延续 {SIGNAL_PERSISTENCE_DAYS} 日，可重点观察 **有色金属** 现货成交，"
         "收盘后复核折溢价、申赎与数据源一致性。"
     )
     return _Candidate(

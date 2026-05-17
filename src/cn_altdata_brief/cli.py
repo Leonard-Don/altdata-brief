@@ -15,6 +15,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import sys
@@ -28,6 +29,12 @@ from cn_altdata_brief.adapters.base import AdapterPayload, AdapterUnavailable
 from cn_altdata_brief.config import (
     load_source_config,
     source_mode_to_kwargs,
+)
+from cn_altdata_brief.llm import (
+    DEFAULT_LLM_MODEL,
+    aggregate_usage,
+    log_usage,
+    rephrase_observation,
 )
 from cn_altdata_brief.publish import GhPagesPublisher
 from cn_altdata_brief.publish.gh_pages import (
@@ -59,6 +66,7 @@ DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "output"
 DEFAULT_BRIEFS_DIR = DEFAULT_OUTPUT_DIR / "briefs"
 DEFAULT_CHARTS_DIR = DEFAULT_OUTPUT_DIR / "charts"
 DEFAULT_FEED_PATH = DEFAULT_OUTPUT_DIR / "feed.xml"
+DEFAULT_LLM_USAGE_LOG = DEFAULT_OUTPUT_DIR / "llm_usage.jsonl"
 DEFAULT_GH_PAGES_BRANCH = "gh-pages"
 
 logger = logging.getLogger(__name__)
@@ -79,6 +87,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_validate(args)
     if args.command == "publish":
         return _cmd_publish(args)
+    if args.command == "llm-usage":
+        return _cmd_llm_usage(args)
 
     parser.print_help()
     return 1
@@ -140,6 +150,24 @@ def _build_parser() -> argparse.ArgumentParser:
             "'cache' = bypass public summary, read internal caches. "
             "'live' = same as auto but force-enables HTTP live endpoints."
         ),
+    )
+    gen.add_argument(
+        "--with-llm",
+        action="store_true",
+        help=(
+            "Opt in to LLM rephrasing for the '本日观察' section only. "
+            "Failures or validation drift fall back to deterministic text."
+        ),
+    )
+    gen.add_argument(
+        "--llm-model",
+        default=DEFAULT_LLM_MODEL,
+        help=f"Anthropic model used with --with-llm (default: {DEFAULT_LLM_MODEL}).",
+    )
+    gen.add_argument(
+        "--llm-usage-log",
+        default=str(DEFAULT_LLM_USAGE_LOG),
+        help=f"Append-only JSONL usage log for --with-llm (default: {DEFAULT_LLM_USAGE_LOG}).",
     )
     gen.add_argument(
         "-v", "--verbose", action="store_true", help="Verbose logging (subcommand-scoped alias)."
@@ -224,6 +252,30 @@ def _build_parser() -> argparse.ArgumentParser:
         "-v", "--verbose", action="store_true", help="Verbose logging (subcommand-scoped alias)."
     )
 
+    usage = subparsers.add_parser(
+        "llm-usage",
+        help="Summarize the optional LLM usage log.",
+    )
+    usage.add_argument(
+        "--usage-log",
+        default=str(DEFAULT_LLM_USAGE_LOG),
+        help=f"Path to llm_usage.jsonl (default: {DEFAULT_LLM_USAGE_LOG}).",
+    )
+    usage.add_argument(
+        "--days",
+        type=int,
+        default=None,
+        help="Only include records from the last N days (default: lifetime).",
+    )
+    usage.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit machine-readable JSON.",
+    )
+    usage.add_argument(
+        "-v", "--verbose", action="store_true", help="Verbose logging (subcommand-scoped alias)."
+    )
+
     return parser
 
 
@@ -270,6 +322,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
         return 2
 
     sections = _synthesize(payloads)
+    llm_context = _maybe_rephrase_observation(sections["observation"], date=date, args=args)
 
     if args.no_charts:
         chart_paths: dict[str, Path] = {}
@@ -293,6 +346,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
         "industry": sections["industry"],
         "observation": sections["observation"],
         "charts": rel_charts,
+        "llm": llm_context,
     }
     markdown = render_brief_markdown(context=context)
     brief_path = briefs_dir / f"{date}.md"
@@ -385,6 +439,45 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     return code
 
 
+def _cmd_llm_usage(args: argparse.Namespace) -> int:
+    aggregate = aggregate_usage(Path(args.usage_log), days=args.days)
+    out = {
+        "days": aggregate.days,
+        "total_calls": aggregate.total_calls,
+        "ok_calls": aggregate.ok_calls,
+        "fallback_calls": aggregate.fallback_calls,
+        "input_tokens": aggregate.input_tokens,
+        "output_tokens": aggregate.output_tokens,
+        "est_cost_usd": aggregate.est_cost_usd,
+        "avg_latency_ms": aggregate.avg_latency_ms,
+        "per_status": aggregate.per_status,
+        "per_model": aggregate.per_model,
+        "first_ts": aggregate.first_ts,
+        "last_ts": aggregate.last_ts,
+    }
+    if args.json:
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    else:
+        window = f"last {aggregate.days} day(s)" if aggregate.days else "lifetime"
+        print(
+            f"LLM usage ({window}) · calls={aggregate.total_calls} · "
+            f"ok={aggregate.ok_calls} · fallback={aggregate.fallback_calls} · "
+            f"tokens={aggregate.input_tokens}/{aggregate.output_tokens} · "
+            f"est_cost_usd={aggregate.est_cost_usd:.4f}"
+        )
+        if aggregate.per_status:
+            statuses = ", ".join(
+                f"{status}={count}" for status, count in sorted(aggregate.per_status.items())
+            )
+            print(f"statuses: {statuses}")
+        if aggregate.per_model:
+            models = ", ".join(
+                f"{model}={count}" for model, count in sorted(aggregate.per_model.items())
+            )
+            print(f"models: {models}")
+    return 0
+
+
 def _synthesize(payloads: dict[str, AdapterPayload | None]) -> dict[str, Any]:
     return {
         "policy": synthesize_policy(payloads.get("super_pricing")),
@@ -398,6 +491,98 @@ def _synthesize(payloads: dict[str, AdapterPayload | None]) -> dict[str, Any]:
             payloads.get("etf_512400"),
         ),
     }
+
+
+def _observation_raw_text(observation: dict[str, Any]) -> str:
+    raw_text = observation.get("raw_text")
+    if isinstance(raw_text, str):
+        return raw_text
+    return "\n".join(str(s) for s in observation.get("sentences") or [])
+
+
+def _llm_render_context(
+    raw_text: str,
+    *,
+    requested: bool,
+    used: bool,
+    status: str,
+    model: str | None = None,
+    latency_ms: float | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    note: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "requested": requested,
+        "used": used,
+        "status": status,
+        "model": model,
+        "latency_ms": latency_ms,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "raw_hash": hashlib.sha256(raw_text.encode("utf-8")).hexdigest()[:16]
+        if raw_text
+        else "",
+        "note": note,
+    }
+
+
+def _maybe_rephrase_observation(
+    observation: dict[str, Any],
+    *,
+    date: str,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    raw_text = _observation_raw_text(observation)
+    observation.pop("polished_text", None)
+
+    if not getattr(args, "with_llm", False):
+        return _llm_render_context(
+            raw_text,
+            requested=False,
+            used=False,
+            status="disabled",
+        )
+
+    model = str(getattr(args, "llm_model", DEFAULT_LLM_MODEL))
+    if not observation.get("available"):
+        return _llm_render_context(
+            raw_text,
+            requested=True,
+            used=False,
+            status="skipped_no_signal",
+            model=model,
+            note="observation unavailable; using deterministic missing-data text",
+        )
+
+    result = rephrase_observation(
+        raw_text,
+        {
+            "date": date,
+            "industries": observation.get("industries") or [],
+        },
+        model=model,
+    )
+    log_usage(
+        result,
+        Path(getattr(args, "llm_usage_log", DEFAULT_LLM_USAGE_LOG)),
+        extra={"date": date, "section": "observation"},
+    )
+
+    if result.ok:
+        observation["polished_text"] = result.polished_text
+
+    return _llm_render_context(
+        raw_text,
+        requested=True,
+        used=result.ok,
+        status=result.status,
+        model=result.llm_model_used or model,
+        latency_ms=result.latency_ms,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        note=result.note,
+    )
 
 
 def _refresh_latest_symlink(briefs_dir: Path, brief_path: Path) -> None:

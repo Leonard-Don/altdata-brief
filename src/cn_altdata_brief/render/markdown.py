@@ -2,12 +2,40 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
 DEFAULT_TEMPLATE_DIR = Path(__file__).resolve().parents[3] / "templates"
+
+
+def _raw_observation_text(observation: dict[str, Any] | None) -> str:
+    if not observation:
+        return ""
+    raw_text = observation.get("raw_text")
+    if isinstance(raw_text, str):
+        return raw_text
+    sentences = observation.get("sentences") or []
+    return "\n".join(str(s) for s in sentences)
+
+
+def _default_llm_context(observation: dict[str, Any] | None = None) -> dict[str, Any]:
+    raw_text = _raw_observation_text(observation)
+    return {
+        "requested": False,
+        "used": False,
+        "status": "disabled",
+        "model": None,
+        "latency_ms": None,
+        "input_tokens": None,
+        "output_tokens": None,
+        "raw_hash": hashlib.sha256(raw_text.encode("utf-8")).hexdigest()[:16]
+        if raw_text
+        else "",
+        "note": None,
+    }
 
 
 def _env(template_dir: Path) -> Environment:
@@ -39,9 +67,16 @@ def render_brief_markdown(
           "observation": {...},
           "charts": {"policy": "charts/.../policy.png", ...} | {},
           "fetched_at": "2026-05-17T01:23:45Z",
+          "llm": {...},  # optional; defaults to disabled when omitted
         }
     """
     tdir = Path(template_dir) if template_dir else DEFAULT_TEMPLATE_DIR
     env = _env(tdir)
     template = env.get_template(template_name)
-    return template.render(**context)
+    render_context = dict(context)
+    if "llm" not in render_context:
+        observation = render_context.get("observation")
+        render_context["llm"] = _default_llm_context(
+            observation if isinstance(observation, dict) else None
+        )
+    return template.render(**render_context)
