@@ -10,8 +10,9 @@
 #  >0 — uv / environment failure
 #
 # v0.2 adds a pre-flight `validate` pass. The brief refuses to publish
-# when the data-quality preconditions trip — empty industries, NaN
-# metals, stale ETF snapshot, or incomplete CMA verdicts.
+# when hard data-quality preconditions trip — empty industries, NaN
+# metals, or incomplete CMA verdicts. WARN-level freshness signals (for
+# example a stale ETF snapshot) are logged but do not stop local generation.
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -28,12 +29,15 @@ uv sync --quiet
 # WARN-level signals (e.g. stale ETF snapshot) are tolerated locally;
 # CI uses `--fail-on-warn` to be stricter.
 echo "[generate_daily] pre-flight validate ..."
-if ! uv run cn-altdata-brief validate; then
-    rc=$?
-    if [ "$rc" -ge 2 ]; then
-        echo "[generate_daily] validate FAILED (exit=$rc); aborting before publish."
-        exit "$rc"
-    fi
+set +e
+uv run cn-altdata-brief validate
+rc=$?
+set -e
+if [ "$rc" -ge 2 ]; then
+    echo "[generate_daily] validate FAILED (exit=$rc); aborting before publish."
+    exit "$rc"
+fi
+if [ "$rc" -gt 0 ]; then
     echo "[generate_daily] validate emitted warnings (exit=$rc); continuing."
 fi
 
