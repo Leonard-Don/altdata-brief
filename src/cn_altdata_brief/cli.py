@@ -7,6 +7,9 @@ Usage::
     cn-altdata-brief generate --output-dir /tmp/briefs
     cn-altdata-brief validate              # run data-quality preconditions
     cn-altdata-brief validate --fail-on-warn  # CI mode
+    cn-altdata-brief publish               # push today's brief to gh-pages (v0.6)
+    cn-altdata-brief publish --dry-run     # show what would happen
+    cn-altdata-brief publish --date 2026-05-17 --gh-pages-branch site
 """
 
 from __future__ import annotations
@@ -25,6 +28,11 @@ from cn_altdata_brief.adapters.base import AdapterPayload, AdapterUnavailable
 from cn_altdata_brief.config import (
     load_source_config,
     source_mode_to_kwargs,
+)
+from cn_altdata_brief.publish import GhPagesPublisher
+from cn_altdata_brief.publish.gh_pages import (
+    PublishError,
+    default_template_dir,
 )
 from cn_altdata_brief.render import render_all_charts, render_brief_markdown, render_site_index
 from cn_altdata_brief.render.rss import render_feed
@@ -50,6 +58,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]  # src/cn_altdata_brief/cli.p
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "output"
 DEFAULT_BRIEFS_DIR = DEFAULT_OUTPUT_DIR / "briefs"
 DEFAULT_CHARTS_DIR = DEFAULT_OUTPUT_DIR / "charts"
+DEFAULT_FEED_PATH = DEFAULT_OUTPUT_DIR / "feed.xml"
+DEFAULT_GH_PAGES_BRANCH = "gh-pages"
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_generate(args)
     if args.command == "validate":
         return _cmd_validate(args)
+    if args.command == "publish":
+        return _cmd_publish(args)
 
     parser.print_help()
     return 1
@@ -156,6 +168,59 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     val.add_argument(
+        "-v", "--verbose", action="store_true", help="Verbose logging (subcommand-scoped alias)."
+    )
+
+    pub = subparsers.add_parser(
+        "publish",
+        help="(v0.6) Publish today's brief to the gh-pages branch.",
+    )
+    pub.add_argument(
+        "--date",
+        default=None,
+        help="Date stamp YYYY-MM-DD (default: today UTC).",
+    )
+    pub.add_argument(
+        "--briefs-dir",
+        default=str(DEFAULT_BRIEFS_DIR),
+        help=f"Source briefs directory (default: {DEFAULT_BRIEFS_DIR}).",
+    )
+    pub.add_argument(
+        "--charts-dir",
+        default=str(DEFAULT_CHARTS_DIR),
+        help=f"Source charts directory (default: {DEFAULT_CHARTS_DIR}).",
+    )
+    pub.add_argument(
+        "--feed-path",
+        default=str(DEFAULT_FEED_PATH),
+        help=f"Optional RSS feed to publish (default: {DEFAULT_FEED_PATH}).",
+    )
+    pub.add_argument(
+        "--gh-pages-branch",
+        default=DEFAULT_GH_PAGES_BRANCH,
+        help=f"Branch to publish to (default: {DEFAULT_GH_PAGES_BRANCH}).",
+    )
+    pub.add_argument(
+        "--repo-root",
+        default=str(PROJECT_ROOT),
+        help="Git repo root (default: project root).",
+    )
+    pub.add_argument(
+        "--template-dir",
+        default=str(default_template_dir()),
+        help="Jekyll template overlay dir (default: <repo>/gh-pages-template).",
+    )
+    pub.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Plan only — show the file list and exit without touching git.",
+    )
+    pub.add_argument(
+        "--no-push",
+        action="store_true",
+        help="Commit to gh-pages locally but don't push to origin.",
+    )
+    pub.add_argument(
         "-v", "--verbose", action="store_true", help="Verbose logging (subcommand-scoped alias)."
     )
 
@@ -371,6 +436,54 @@ def _relative_to(briefs_dir: Path, chart_path: Path) -> str:
         return str(Path("..") / chart_path.relative_to(briefs_dir.parent))
     except ValueError:
         return str(chart_path)
+
+
+def _cmd_publish(args: argparse.Namespace) -> int:
+    """v0.6 — push the brief for ``args.date`` to the gh-pages branch."""
+    date = args.date or datetime.now(UTC).strftime("%Y-%m-%d")
+
+    publisher = GhPagesPublisher(
+        brief_dir=Path(args.briefs_dir),
+        chart_dir=Path(args.charts_dir),
+        feed_path=Path(args.feed_path),
+        template_dir=Path(args.template_dir),
+        repo_root=Path(args.repo_root),
+        gh_pages_branch=args.gh_pages_branch,
+    )
+
+    try:
+        result = publisher.publish(
+            date,
+            push=not args.no_push,
+            dry_run=args.dry_run,
+        )
+    except PublishError as exc:
+        print(f"ERROR: publish failed: {exc}", file=sys.stderr)
+        return 3
+
+    if result.dry_run:
+        print("=== DRY RUN ===")
+        print(result.message)
+        print()
+        print("Files that would be copied:")
+        for p in result.plan.files_to_copy:
+            print(f"  · {p}")
+        print()
+        print(f"Branch: {result.plan.branch}"
+              f"{'  [will create as orphan]' if result.plan.will_create_orphan else ''}")
+        print(f"Index.md would list {len(result.plan.index_briefs)} brief(s):")
+        for stem in result.plan.index_briefs[:10]:
+            print(f"  · {stem}")
+        if len(result.plan.index_briefs) > 10:
+            print(f"  · … +{len(result.plan.index_briefs) - 10} more")
+        print()
+        print("Re-run without --dry-run to actually publish.")
+        return 0
+
+    push_tag = "pushed" if result.pushed else "committed (NOT pushed)"
+    print(f"OK · {result.message} · {push_tag} · "
+          f"returned to branch={result.original_branch or 'detached'}")
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover
