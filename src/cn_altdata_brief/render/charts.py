@@ -17,7 +17,14 @@ _CJK_CANDIDATES = (
     "Heiti SC",
     "Hiragino Sans GB",
     "Arial Unicode MS",
+    # Ubuntu's fonts-noto-cjk package commonly registers the TTC as JP even
+    # though it includes the shared CJK glyph coverage we need for Simplified
+    # Chinese labels in CI.
     "Noto Sans CJK SC",
+    "Noto Sans CJK JP",
+    "Noto Sans CJK TC",
+    "Noto Sans CJK HK",
+    "Noto Sans CJK KR",
     "WenQuanYi Zen Hei",
     "SimHei",
     "Microsoft YaHei",
