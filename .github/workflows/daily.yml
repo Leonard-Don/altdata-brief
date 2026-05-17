@@ -1,14 +1,26 @@
 name: Daily Brief
 
 # Beijing time 09:00 = 01:00 UTC; trading days Mon-Fri.
-# NOTE: This workflow is a TEMPLATE for v0.2. It will NOT publish until the
-# repo has a remote configured and the upstream data caches are made
-# available to the runner (e.g. by uploading anonymized fixtures or
-# committing a digest job in each upstream project).
+#
+# v0.3 plumbing:
+#   - This workflow now checks out the upstream source repos (super-pricing
+#     and index-inclusion-research) and reads their `data/public/*_summary.json`
+#     artifacts.
+#   - `--source-mode public` forces the adapters to only read public summaries
+#     (no cache fallback), so the workflow fails loudly if a summary is missing
+#     instead of silently emitting an empty brief.
+#   - Publish step is still a TEMPLATE — running on a public fork requires the
+#     upstream repos to be public or for the workflow to have read access to
+#     their checkouts. The maintainer reviews each push to gh-pages until
+#     paid distribution begins.
 on:
   schedule:
     - cron: "0 1 * * 1-5"
   workflow_dispatch:
+
+env:
+  # Tell the brief generator where the upstream checkouts will land.
+  CN_ALTDATA_BRIEF_SOURCE_ROOT: ${{ github.workspace }}/sources
 
 jobs:
   generate:
@@ -19,6 +31,31 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # ----- Source-repo public-summary checkouts -----
+      # Each upstream repo only needs the `data/public/` directory at
+      # the surface — but `actions/checkout` doesn't support sparse
+      # checkouts of arbitrary paths, so we clone shallow (depth=1).
+      - name: Checkout super-pricing-system (public summary only)
+        uses: actions/checkout@v4
+        with:
+          repository: Leonard-Don/super-pricing-system
+          path: sources/PycharmProjects/super-pricing-system
+          fetch-depth: 1
+          sparse-checkout: |
+            data/public
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout index-inclusion-research (public summary only)
+        uses: actions/checkout@v4
+        with:
+          repository: Leonard-Don/index-inclusion-research
+          path: sources/index-inclusion-research
+          fetch-depth: 1
+          sparse-checkout: |
+            data/public
+          sparse-checkout-cone-mode: false
+        continue-on-error: true  # index-inclusion-research summary still WIP
 
       - uses: actions/setup-python@v5
         with:
@@ -39,26 +76,22 @@ jobs:
 
       - run: uv sync
 
-      # In v0.2 the upstream caches live on the maintainer's laptop only.
-      # When publishing for real, replace this step with a real cache
-      # download (S3 presigned URL, artifact transfer, etc.).
-      - name: Stub — download upstream caches
-        id: cache
+      - name: Inspect resolved source paths
         run: |
-          echo "ready=false" >> "$GITHUB_OUTPUT"
-          echo "Upstream caches not wired up in v0.2; skipping publish steps."
-          echo "See docs/architecture.md for the planned wiring."
+          echo "Workspace root: ${{ github.workspace }}"
+          echo "Source root (sees by adapters): ${CN_ALTDATA_BRIEF_SOURCE_ROOT}"
+          find "${CN_ALTDATA_BRIEF_SOURCE_ROOT}" -name '*_summary.json' -maxdepth 6 || true
 
-      - name: Validate upstream caches
-        if: steps.cache.outputs.ready == 'true'
-        run: uv run cn-altdata-brief validate --fail-on-warn
+      - name: Validate upstream public summaries
+        run: uv run cn-altdata-brief validate --source-mode public
 
-      - name: Generate brief
-        if: steps.cache.outputs.ready == 'true'
-        run: uv run cn-altdata-brief generate --verbose
+      - name: Generate brief (public-summary mode)
+        run: uv run cn-altdata-brief generate --source-mode public --verbose
 
+      # Publish to gh-pages is still a TEMPLATE — disable by default until
+      # the maintainer flips a repo secret or workflow input on.
       - name: Publish to gh-pages
-        if: steps.cache.outputs.ready == 'true'
+        if: github.event_name == 'workflow_dispatch' && inputs.publish == 'true'
         env:
           GIT_USER_NAME: cn-altdata-brief-bot
           GIT_USER_EMAIL: bot@cn-altdata-brief.local

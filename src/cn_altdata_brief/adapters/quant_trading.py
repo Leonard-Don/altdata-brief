@@ -56,6 +56,7 @@ class QuantTradingAdapter(AdapterBase):
                 ),
                 "policy_timestamp": payload.get("signal", {}).get("timestamp"),
                 "cache_path": str(policy_path),
+                "source_mode": "cache",
             },
         )
 
@@ -84,6 +85,7 @@ class QuantTradingAdapter(AdapterBase):
                 "industries": rows,
                 "policy_count": int(raw.get("policy_count", 0) or 0),
                 "policy_timestamp": raw.get("timestamp"),
+                "source_mode": "live",
             },
         )
 

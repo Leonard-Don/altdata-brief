@@ -10,7 +10,8 @@
 ## Phase 2 (Day 31-60) · 引入叙事增强 + 周度纵深
 
 - v0.2 已上线：先用确定性模板把「本日观察」改成 framing / context / follow-up，并加入 validate + RSS
-- v0.3 再评估是否用 LLM 改写 observation；rule-based 输出继续作为 ground truth
+- v0.3 已上线：每个 adapter 优先读 `data/public/<source>_summary.json`（GitHub Actions 通路），保留 cache 回退；新增 `--source-mode {auto,public,cache,live}` 与 `public_summary_freshness` 检查
+- v0.4 评估是否用 LLM 改写 observation；rule-based 输出继续作为 ground truth
 - 启动 **Weekly Deep-Dive** ¥39/月：每周一篇行业纵深 + 敏感性分析 + chart pack
 - 目标 KPI：付费转化率 ≥ 3%（30 订阅 → ≥1 付费），写够 4 篇 Weekly
 

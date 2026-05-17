@@ -44,12 +44,14 @@ class ETF512400Adapter(AdapterBase):
                 "run `npm run refresh` in the ETF 512400 project first"
             )
         payload = self.read_json(self.snapshot_path)
+        data = _normalize_snapshot(payload)
+        data["source_mode"] = "cache"
         return AdapterPayload(
             source=self.source_name,
             fetched_at=self.now_iso(),
             cache_path=self.snapshot_path,
             live=False,
-            data=_normalize_snapshot(payload),
+            data=data,
         )
 
 

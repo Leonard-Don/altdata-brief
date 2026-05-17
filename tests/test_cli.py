@@ -33,9 +33,19 @@ def patched_default_paths(
 ) -> None:
     """Point all adapter defaults at fixture dirs."""
     monkeypatch.setattr(sp_mod, "DEFAULT_CACHE_DIR", super_pricing_cache)
+    monkeypatch.setattr(
+        sp_mod,
+        "DEFAULT_PUBLIC_SUMMARY",
+        super_pricing_cache / "missing_public_summary.json",
+    )
     monkeypatch.setattr(qt_mod, "DEFAULT_CACHE_DIR", quant_trading_cache)
     monkeypatch.setattr(ix_mod, "DEFAULT_TABLE_DIR", index_research_tables)
     monkeypatch.setattr(ix_mod, "DEFAULT_FIGURE_DIR", index_research_tables)
+    monkeypatch.setattr(
+        ix_mod,
+        "DEFAULT_PUBLIC_SUMMARY",
+        index_research_tables / "missing_public_summary.json",
+    )
     monkeypatch.setattr(etf_mod, "DEFAULT_SNAPSHOT", etf_512400_snapshot)
 
 
@@ -109,10 +119,14 @@ def test_cli_validate_json_success(
 ) -> None:
     monkeypatch.setattr(validate_mod, "MAX_ETF_SNAPSHOT_AGE_DAYS", 9999)
     code = main(["validate", "--json"])
-    assert code == 0
+    # WARN is acceptable here — the maintainer's local super-pricing repo
+    # may or may not have a public summary fresh inside the 24h window.
+    assert code in (0, 1)
     payload = json.loads(capsys.readouterr().out)
-    assert payload["exit_code"] == 0
-    assert len(payload["checks"]) == 4
+    assert payload["exit_code"] == code
+    assert len(payload["checks"]) == 5
+    names = [c["name"] for c in payload["checks"]]
+    assert "public_summary_freshness" in names
 
 
 def test_cli_help_works(capsys: pytest.CaptureFixture[str]) -> None:

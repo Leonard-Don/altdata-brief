@@ -59,7 +59,9 @@ def patched_default_paths(
     from cn_altdata_brief.adapters import super_pricing as sp_mod
 
     monkeypatch.setattr(sp_mod, "DEFAULT_CACHE_DIR", super_pricing_cache)
+    monkeypatch.setattr(sp_mod, "DEFAULT_PUBLIC_SUMMARY", super_pricing_cache / "missing_public_summary.json")
     monkeypatch.setattr(qt_mod, "DEFAULT_CACHE_DIR", quant_trading_cache)
     monkeypatch.setattr(ix_mod, "DEFAULT_TABLE_DIR", index_research_tables)
     monkeypatch.setattr(ix_mod, "DEFAULT_FIGURE_DIR", index_research_tables)
+    monkeypatch.setattr(ix_mod, "DEFAULT_PUBLIC_SUMMARY", index_research_tables / "missing_public_summary.json")
     monkeypatch.setattr(etf_mod, "DEFAULT_SNAPSHOT", etf_512400_snapshot)
