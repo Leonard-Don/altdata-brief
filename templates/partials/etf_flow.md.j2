@@ -1,0 +1,13 @@
+## 3. {{ etf_flow.title }}
+
+{% if charts.get('nav') %}
+![ETF NAV chart]({{ charts['nav'] }})
+{% endif %}
+
+{% for bullet in etf_flow.bullets %}
+- {{ bullet }}
+{% endfor %}
+
+**Sources:** {{ etf_flow.sources|join(' · ') if etf_flow.sources else 'n/a' }}
+
+---

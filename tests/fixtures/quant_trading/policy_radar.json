@@ -1,0 +1,26 @@
+{
+  "provider": "policy_radar",
+  "signal": {
+    "source": "policy_radar",
+    "timestamp": "2026-05-05T11:00:55.113895",
+    "policy_count": 9,
+    "industry_signals": {
+      "新能源汽车": {
+        "avg_impact": -0.28,
+        "mentions": 67,
+        "signal": "bearish"
+      },
+      "有色金属": {
+        "avg_impact": 0.14,
+        "mentions": 23,
+        "signal": "bullish"
+      },
+      "电网": {
+        "avg_impact": 0.08,
+        "mentions": 11,
+        "signal": "neutral"
+      }
+    }
+  },
+  "records": []
+}

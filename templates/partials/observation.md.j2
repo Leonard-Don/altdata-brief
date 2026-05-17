@@ -1,0 +1,9 @@
+## 5. {{ observation.title }}
+
+{% for sentence in observation.sentences %}
+> {{ sentence }}
+{% endfor %}
+
+**Sources:** {{ observation.sources|join(' · ') if observation.sources else 'n/a' }}
+
+---

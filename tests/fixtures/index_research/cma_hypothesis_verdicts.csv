@@ -1,0 +1,8 @@
+hid,name_cn,verdict,confidence,evidence_summary,metric_snapshot,next_step,evidence_refs,p_value,key_label,key_value,n_obs,paper_ids,paper_count,track,evidence_tier
+H1,信息泄露与预运行,证据不足,中,sample,sample,sample,M1,0.8748,bootstrap p,0.8748,436,h_1986,1,identification,core
+H2,被动基金 AUM 差异,部分支持,中,sample,sample,sample,M5,,US AUM ratio,13.48,17,p_2011,1,demand_curve,core
+H3,散户 vs 机构结构,支持,高,sample,sample,sample,M3,,双通道命中率,0.75,4,m_2003,1,price_pressure,supplementary
+H4,卖空约束,证据不足,中,sample,sample,sample,M2,0.5366,regression p,0.5366,436,a_2022,1,identification,supplementary
+H5,涨跌停限制,支持,高,sample,sample,sample,M3,0.0082,limit_coef p,0.0082,936,c_2021,1,identification,core
+H6,指数权重可预测性,证据不足,中,sample,sample,sample,M4,,heavy-light spread,-0.019,67,s_1986,1,demand_curve,supplementary
+H7,行业结构差异,支持,中,sample,sample,sample,M4,,US sector spread,5.95,187,m_2003,1,identification,core
