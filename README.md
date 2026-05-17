@@ -248,5 +248,4 @@ RUN_PUBLISH_AFTER_GENERATE=0 bash scripts/run_now.sh
 
 MIT.
 
-* Author: [Leonard-Don](https://github.com/Leonard-Don)
 * For outsourcing / collaboration inquiries: this repo IS my portfolio — open an issue or DM on Boss/Upwork.
