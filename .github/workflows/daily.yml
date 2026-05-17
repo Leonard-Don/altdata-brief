@@ -1,0 +1,65 @@
+name: Daily Brief
+
+# Beijing time 09:00 = 01:00 UTC; trading days Mon-Fri.
+# NOTE: This workflow is a TEMPLATE for v0.1. It will NOT run until the
+# repo has a remote configured and the upstream data caches are made
+# available to the runner (e.g. by uploading anonymized fixtures or
+# committing a digest job in each upstream project).
+on:
+  schedule:
+    - cron: "0 1 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - run: uv sync
+
+      # In v0.1 the upstream caches live on the maintainer's laptop only.
+      # When publishing for real, replace this step with a real cache
+      # download (S3 presigned URL, artifact transfer, etc.).
+      - name: Stub — download upstream caches
+        run: |
+          echo "Upstream caches not wired up in v0.1; aborting."
+          echo "See docs/architecture.md for the planned wiring."
+          exit 0
+
+      - name: Generate brief
+        run: uv run cn-altdata-brief generate --verbose
+
+      - name: Publish to gh-pages
+        env:
+          GIT_USER_NAME: cn-altdata-brief-bot
+          GIT_USER_EMAIL: bot@cn-altdata-brief.local
+        run: |
+          set -e
+          DATE=$(date -u +"%Y-%m-%d")
+          git config user.name "$GIT_USER_NAME"
+          git config user.email "$GIT_USER_EMAIL"
+          git fetch origin gh-pages || git checkout --orphan gh-pages
+          git checkout gh-pages || git checkout -b gh-pages
+          mkdir -p briefs
+          cp output/briefs/${DATE}.md briefs/
+          cp output/briefs/index.md briefs/index.md
+          if [ -d output/charts/${DATE} ]; then
+            mkdir -p charts
+            cp -R output/charts/${DATE} charts/
+          fi
+          git add briefs charts
+          git commit -m "auto: brief ${DATE}" || echo "nothing to commit"
+          git push origin gh-pages

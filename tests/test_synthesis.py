@@ -1,0 +1,148 @@
+"""Synthesis tests: empty input → degradation, happy path → expected content."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from cn_altdata_brief.adapters import (
+    ETF512400Adapter,
+    IndexResearchAdapter,
+    QuantTradingAdapter,
+    SuperPricingAdapter,
+)
+from cn_altdata_brief.synthesis import (
+    synthesize_etf_flow,
+    synthesize_industry,
+    synthesize_inventory,
+    synthesize_observation,
+    synthesize_policy,
+)
+
+# ---- policy ---------------------------------------------------------------
+
+
+def test_policy_empty_input_degrades_gracefully() -> None:
+    result = synthesize_policy(None)
+    assert result["available"] is False
+    assert "数据缺失" in result["bullets"][0]
+    assert result["top_industries"] == []
+
+
+def test_policy_happy_path_lists_top_3(super_pricing_cache: Path) -> None:
+    payload = SuperPricingAdapter(cache_dir=super_pricing_cache).fetch()
+    result = synthesize_policy(payload)
+    assert result["available"] is True
+    assert len(result["bullets"]) == 3
+    assert "新能源汽车" in result["bullets"][0]
+    assert result["policy_count"] == 12
+
+
+# ---- inventory ------------------------------------------------------------
+
+
+def test_inventory_empty_input_degrades() -> None:
+    result = synthesize_inventory(None)
+    assert result["available"] is False
+    assert result["metals"] == []
+
+
+def test_inventory_happy_path_tags_metals(super_pricing_cache: Path) -> None:
+    payload = SuperPricingAdapter(cache_dir=super_pricing_cache).fetch()
+    result = synthesize_inventory(payload)
+    assert result["available"] is True
+    assert len(result["metals"]) == 3
+    text = " ".join(result["bullets"])
+    assert "去库" in text  # 铜 falling triggers tag
+    assert "累库" in text  # 铝 rising triggers tag
+    assert "持稳" in text  # 镍 stable triggers tag
+
+
+# ---- etf_flow -------------------------------------------------------------
+
+
+def test_etf_flow_empty_etf_payload() -> None:
+    result = synthesize_etf_flow(None, None)
+    assert result["available"] is False
+    assert "数据缺失" in result["bullets"][0]
+
+
+def test_etf_flow_uses_both_payloads(
+    etf_512400_snapshot: Path, quant_trading_cache: Path
+) -> None:
+    etf_payload = ETF512400Adapter(snapshot_path=etf_512400_snapshot).fetch()
+    quant_payload = QuantTradingAdapter(cache_dir=quant_trading_cache).fetch()
+    result = synthesize_etf_flow(etf_payload, quant_payload)
+    assert result["available"] is True
+    assert "有色金属ETF南方" in result["bullets"][0]
+    # adjacent industry detection should find 有色金属 from quant cache
+    text = " ".join(result["bullets"])
+    assert "有色金属" in text
+
+
+def test_etf_flow_handles_missing_quant(etf_512400_snapshot: Path) -> None:
+    etf_payload = ETF512400Adapter(snapshot_path=etf_512400_snapshot).fetch()
+    result = synthesize_etf_flow(etf_payload, None)
+    assert result["available"] is True
+    assert result["adjacent"] == []
+
+
+# ---- industry -------------------------------------------------------------
+
+
+def test_industry_empty_input() -> None:
+    result = synthesize_industry(None)
+    assert result["available"] is False
+
+
+def test_industry_happy_path(quant_trading_cache: Path) -> None:
+    payload = QuantTradingAdapter(cache_dir=quant_trading_cache).fetch()
+    result = synthesize_industry(payload)
+    assert result["available"] is True
+    assert len(result["bullets"]) == 3
+    assert "新能源汽车" in result["bullets"][0]
+
+
+# ---- observation ----------------------------------------------------------
+
+
+def test_observation_all_missing_returns_缺失() -> None:
+    result = synthesize_observation(None, None, None, None)
+    assert result["available"] is False
+    assert "数据缺失" in result["sentences"][0]
+
+
+def test_observation_with_super_and_etf_produces_sentences(
+    super_pricing_cache: Path, etf_512400_snapshot: Path
+) -> None:
+    sp = SuperPricingAdapter(cache_dir=super_pricing_cache).fetch()
+    etf = ETF512400Adapter(snapshot_path=etf_512400_snapshot).fetch()
+    result = synthesize_observation(sp, None, None, etf)
+    assert result["available"] is True
+    assert 1 <= len(result["sentences"]) <= 3
+    joined = " ".join(result["sentences"])
+    assert "新能源汽车" in joined  # from policy skew
+
+
+def test_observation_picks_up_pap_changes(index_research_tables: Path) -> None:
+    payload = IndexResearchAdapter(
+        table_dir=index_research_tables, figure_dir=index_research_tables
+    ).fetch()
+    result = synthesize_observation(None, None, payload, None)
+    assert result["available"] is True
+    assert "迁移" in " ".join(result["sentences"])
+
+
+def test_observation_no_pap_changes_reports_stability(tmp_path: Path) -> None:
+    # build an index_research adapter with only verdicts (no PAP)
+    verdicts = tmp_path / "cma_hypothesis_verdicts.csv"
+    verdicts.write_text(
+        "hid,name_cn,verdict,confidence,evidence_summary,metric_snapshot,next_step,evidence_refs,p_value,key_label,key_value,n_obs,paper_ids,paper_count,track,evidence_tier\n"
+        "H1,信息泄露与预运行,支持,高,x,x,x,M1,0.05,bootstrap p,0.05,100,h_1986,1,identification,core\n"
+        "H2,价格压力,证据不足,中,x,x,x,M2,0.3,p,0.3,100,p_2011,1,demand,core\n",
+        encoding="utf-8",
+    )
+    payload = IndexResearchAdapter(table_dir=tmp_path, figure_dir=tmp_path).fetch()
+    result = synthesize_observation(None, None, payload, None)
+    assert result["available"] is True
+    text = " ".join(result["sentences"])
+    assert "保持稳定" in text

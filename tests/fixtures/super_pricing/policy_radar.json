@@ -1,0 +1,41 @@
+{
+  "provider": "policy_radar",
+  "signal": {
+    "source": "policy_radar",
+    "category": "policy",
+    "signal": 0,
+    "strength": 0.31,
+    "score": -0.31,
+    "confidence": 0.62,
+    "record_count": 12,
+    "timestamp": "2026-05-05T11:00:55.113895",
+    "industry_signals": {
+      "新能源汽车": {
+        "avg_impact": -0.3875,
+        "mentions": 94,
+        "signal": "bearish"
+      },
+      "电网": {
+        "avg_impact": 0.1,
+        "mentions": 8,
+        "signal": "neutral"
+      },
+      "风电": {
+        "avg_impact": 0.05,
+        "mentions": 1,
+        "signal": "neutral"
+      },
+      "AI算力": {
+        "avg_impact": 0.0,
+        "mentions": 1,
+        "signal": "neutral"
+      }
+    },
+    "policy_count": 12,
+    "source_health": {
+      "fed": {"level": "watch"},
+      "ecb": {"level": "watch"}
+    }
+  },
+  "records": []
+}

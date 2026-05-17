@@ -1,0 +1,44 @@
+{
+  "meta": {
+    "generatedAt": "2026-05-07T13:09:59.568Z",
+    "mode": "refreshed",
+    "sources": ["mock"],
+    "sourceHealth": [
+      {"id": "quote", "label": "ETF行情", "required": true, "ok": true, "fallback": false},
+      {"id": "etfKlines", "label": "512400 日K", "required": true, "ok": true, "fallback": false},
+      {"id": "benchmarkKlines", "label": "基准日K", "required": true, "ok": true, "fallback": false},
+      {"id": "fundGauge", "label": "盘中估算净值", "required": false, "ok": true, "fallback": false},
+      {"id": "fundTrend", "label": "基金净值趋势", "required": true, "ok": true, "fallback": false},
+      {"id": "commodityDrivers", "label": "商品驱动", "required": false, "ok": true, "fallback": false, "okCount": 5, "total": 5, "fallbackCount": 0}
+    ]
+  },
+  "quote": {
+    "code": "512400",
+    "name": "有色金属ETF南方",
+    "tradeDate": "2026-05-07",
+    "price": 2.207,
+    "previousClose": 2.199,
+    "open": 2.231,
+    "high": 2.235,
+    "low": 2.178,
+    "change": 0.008,
+    "changePercent": 0.0036,
+    "amountCny": 1658626372,
+    "volumeLots": 7521276,
+    "turnoverRate": 0.057
+  },
+  "nav": {
+    "date": "2026-05-06",
+    "unit": 2.1985,
+    "dailyReturn": 0.0385,
+    "accumulated": 2.2235,
+    "source": "mock"
+  },
+  "navTrend": [
+    {"date": "2026-04-29", "unit": 2.10, "dailyReturn": 0.012, "accumulated": 2.12},
+    {"date": "2026-04-30", "unit": 2.12, "dailyReturn": 0.009, "accumulated": 2.14},
+    {"date": "2026-05-04", "unit": 2.15, "dailyReturn": 0.014, "accumulated": 2.17},
+    {"date": "2026-05-05", "unit": 2.16, "dailyReturn": 0.005, "accumulated": 2.18},
+    {"date": "2026-05-06", "unit": 2.1985, "dailyReturn": 0.018, "accumulated": 2.22}
+  ]
+}

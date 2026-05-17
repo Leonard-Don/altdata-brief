@@ -1,0 +1,82 @@
+{
+  "provider": "macro_hf",
+  "signal": {
+    "source": "macro_hf",
+    "timestamp": "2026-05-05T11:02:15.485791",
+    "score": 0.0
+  },
+  "records": [
+    {
+      "record_id": "r1",
+      "timestamp": "2026-05-05T10:21:36.382297",
+      "source": "macro_hf:inventory",
+      "category": "commodity_inventory",
+      "raw_value": {
+        "data_type": "inventory",
+        "metal": "copper",
+        "name": "铜",
+        "trend": "falling",
+        "price_change_pct": -1.85,
+        "volatility": 28.85,
+        "signal": 0,
+        "confidence": 0.42,
+        "source_mode": "proxy"
+      },
+      "metadata": {"label": "铜"},
+      "tags": ["铜", "inventory"]
+    },
+    {
+      "record_id": "r2",
+      "timestamp": "2026-05-05T10:21:36.382297",
+      "source": "macro_hf:inventory",
+      "category": "commodity_inventory",
+      "raw_value": {
+        "data_type": "inventory",
+        "metal": "aluminium",
+        "name": "铝",
+        "trend": "rising",
+        "price_change_pct": 1.45,
+        "volatility": 28.3,
+        "signal": 0,
+        "confidence": 0.51,
+        "source_mode": "proxy"
+      },
+      "metadata": {"label": "铝"},
+      "tags": ["铝", "inventory"]
+    },
+    {
+      "record_id": "r3",
+      "timestamp": "2026-05-05T10:21:36.382297",
+      "source": "macro_hf:inventory",
+      "category": "commodity_inventory",
+      "raw_value": {
+        "data_type": "inventory",
+        "metal": "nickel",
+        "name": "镍",
+        "trend": "stable",
+        "price_change_pct": 0.12,
+        "volatility": 15.2,
+        "signal": 0,
+        "confidence": 0.33,
+        "source_mode": "proxy"
+      },
+      "metadata": {"label": "镍"},
+      "tags": ["镍", "inventory"]
+    },
+    {
+      "record_id": "r4",
+      "timestamp": "2026-05-05T11:02:15.485111",
+      "source": "macro_hf:ports",
+      "category": "port_congestion",
+      "raw_value": {
+        "data_type": "ports",
+        "global_index": 50.0,
+        "status": "正常",
+        "tracked_ports": 10,
+        "coverage": 0.32
+      },
+      "metadata": {"label": "global_ports"},
+      "tags": ["global_ports", "ports"]
+    }
+  ]
+}

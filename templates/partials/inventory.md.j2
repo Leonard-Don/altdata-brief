@@ -1,0 +1,17 @@
+## 2. {{ inventory.title }}
+
+{% if charts.get('inventory') %}
+![库存信号 chart]({{ charts['inventory'] }})
+{% endif %}
+
+{% for bullet in inventory.bullets %}
+- {{ bullet }}
+{% endfor %}
+
+{% if inventory.port_line %}
+> {{ inventory.port_line }}
+{% endif %}
+
+**Sources:** {{ inventory.sources|join(' · ') if inventory.sources else 'n/a' }}{% if inventory.timestamp %} · cache ts=`{{ inventory.timestamp }}`{% endif %}
+
+---

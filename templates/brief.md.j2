@@ -1,0 +1,27 @@
+# CN AltData Brief — {{ date }}
+
+> 由 `cn-altdata-brief` 在 {{ fetched_at }} 自动生成，合成自 4 个本地量化项目的真实数据缓存。
+> 本简报是 6 个项目组合的展示窗口，详见 [项目说明](../README.md)。
+
+---
+
+{% include 'partials/policy.md.j2' %}
+
+{% include 'partials/inventory.md.j2' %}
+
+{% include 'partials/etf_flow.md.j2' %}
+
+{% include 'partials/industry.md.j2' %}
+
+{% include 'partials/observation.md.j2' %}
+
+---
+
+## 元信息
+
+- 生成时间：`{{ fetched_at }}`
+- 数据日期：`{{ date }}`
+- 上游项目：super-pricing-system · quant-trading-system · index-inclusion-research · ETF 512400
+- 合成方式：rule-based deterministic synthesis（v0.1 暂不接入 LLM）
+
+> Disclaimer：本简报不构成投资建议。所有信号来自公开数据源 + 自建 alt-data pipeline，仅供研究与教学讨论。

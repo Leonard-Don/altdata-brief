@@ -1,0 +1,17 @@
+## 1. {{ policy.title }}
+
+{% if charts.get('policy') %}
+![政策动向 chart]({{ charts['policy'] }})
+{% endif %}
+
+{% for bullet in policy.bullets %}
+- {{ bullet }}
+{% endfor %}
+
+{% if policy.policy_count %}
+> 本批次 policy_radar 累计 {{ policy.policy_count }} 条政策记录，confidence={{ '%.3f'|format(policy.confidence) if policy.confidence is not none else 'n/a' }}。
+{% endif %}
+
+**Sources:** {{ policy.sources|join(' · ') if policy.sources else 'n/a' }}{% if policy.timestamp %} · cache ts=`{{ policy.timestamp }}`{% endif %}
+
+---

@@ -1,0 +1,4 @@
+hid,name_cn,classification,baseline_verdict,current_verdict,baseline_confidence,current_confidence,baseline_evidence_tier,current_evidence_tier,baseline_n_obs,current_n_obs,baseline_key_label,current_key_label,baseline_key_value,current_key_value,notes
+H1,信息泄露与预运行,unchanged,证据不足,证据不足,中,中,core,core,436,436,bootstrap p,bootstrap p,0.8748,0.8748,
+H2,被动基金 AUM 差异,changed,supplementary,部分支持,中,中,supplementary,core,17,17,US AUM ratio,US AUM ratio,13.48,13.48,upgraded after CN proxy added
+H3,散户 vs 机构结构,unchanged,支持,支持,高,高,supplementary,supplementary,4,4,双通道命中率,双通道命中率,0.75,0.75,
