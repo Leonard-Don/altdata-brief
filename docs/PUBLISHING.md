@@ -1,4 +1,8 @@
-# Publishing to GitHub Pages · v0.6
+# Publishing to GitHub Pages · v0.6+
+
+> v0.8 adds bilingual (CN + EN) publishing — see section 7 below. The
+> rest of this guide applies unchanged: CN is always the ground truth
+> and the EN sibling rides through the same pipeline.
 
 This guide walks through turning `cn-altdata-brief` from a "writes
 markdown to my laptop" tool into a publicly readable static site at
@@ -174,3 +178,50 @@ configuration).
 * **Idempotent**: republishing the same date with no upstream changes
   is a no-op — the publisher detects an empty staged diff and skips
   the commit, returning a "no changes" result.
+
+---
+
+## 7. Bilingual publishing (v0.8+)
+
+From v0.8, `generate` can produce both Chinese (deterministic ground
+truth) and English (LLM translation) versions of the same brief.
+
+### 7.1 What changes operationally
+
+* `output/briefs/2026-05-17.md` — CN, exactly as before.
+* `output/briefs/2026-05-17.en.md` — new EN sibling, frontmatter
+  carries `language: "en"` + `translation_status: ok | validation_failed | ...`.
+* The publisher picks up every `*.en.md` next to the CN file and copies
+  them into `gh-pages/briefs/`. No script edits required.
+* `index.md` gains a third column on the homepage table:
+  `日期 / Date | 中文 / Chinese | English`. Dates without an EN
+  translation render an em-dash in the EN column.
+* RSS: one `<item>` per language per date. EN items use a `[EN]`
+  title prefix, a `:en` GUID suffix, and a per-item `<language>en</language>`
+  tag so subscribers can filter.
+
+### 7.2 Daily flow with bilingual
+
+```bash
+# requires the [llm] extra and ANTHROPIC_API_KEY
+uv sync --extra llm
+export ANTHROPIC_API_KEY=...
+uv run cn-altdata-brief generate --with-llm --languages CN,EN
+bash scripts/publish_now.sh
+```
+
+### 7.3 Failure handling
+
+Translation is best-effort: on SDK-missing, API-key-missing, network
+error, or validation drift the `.en.md` is **still written** with the
+Chinese source body and a banner explaining the fallback. This means
+the EN URL never 404s — readers always see something, and the
+frontmatter records the reason for the fallback for the operator. The
+next scheduled run retries.
+
+### 7.4 Cost / observability
+
+Each translation call is logged to `output/llm_usage.jsonl` (same
+file as the v0.7 rephrase log). Run `uv run cn-altdata-brief llm-usage`
+to summarize lifetime / per-status cost. Per-day cost for bilingual is
+~1500 input + ~1000 output tokens ≈ $0.02 at claude-3-5-sonnet rates.

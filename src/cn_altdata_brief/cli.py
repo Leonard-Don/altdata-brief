@@ -35,7 +35,9 @@ from cn_altdata_brief.llm import (
     aggregate_usage,
     log_usage,
     rephrase_observation,
+    translate_brief,
 )
+from cn_altdata_brief.llm.translate import TranslationResult
 from cn_altdata_brief.publish import GhPagesPublisher
 from cn_altdata_brief.publish.gh_pages import (
     PublishError,
@@ -60,6 +62,15 @@ from cn_altdata_brief.validate import (
 )
 
 SOURCE_MODE_CHOICES = ("auto", "public", "cache", "live")
+# v0.8: bilingual support. ``CN`` is the deterministic ground truth and
+# always runs; ``EN`` is an LLM translation produced from the CN file
+# after it has been written. Additional ISO-style codes can be added
+# later (e.g. ``JP``) by extending ``_LANG_FILE_SUFFIX``.
+SUPPORTED_LANGUAGES = ("CN", "EN")
+_LANG_FILE_SUFFIX = {
+    "CN": "",       # canonical filename, e.g. 2026-05-17.md
+    "EN": ".en",    # 2026-05-17.en.md — sibling of the CN file
+}
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]  # src/cn_altdata_brief/cli.py -> project root
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "output"
@@ -168,6 +179,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "--llm-usage-log",
         default=str(DEFAULT_LLM_USAGE_LOG),
         help=f"Append-only JSONL usage log for --with-llm (default: {DEFAULT_LLM_USAGE_LOG}).",
+    )
+    gen.add_argument(
+        "--languages",
+        default="CN",
+        help=(
+            "Comma-separated list of languages to produce. CN is always "
+            "the deterministic ground truth; EN (and future codes) are "
+            "LLM translations produced from the CN file. Implies "
+            "--with-llm for non-CN languages. Example: --languages CN,EN. "
+            f"Supported: {','.join(SUPPORTED_LANGUAGES)}."
+        ),
     )
     gen.add_argument(
         "-v", "--verbose", action="store_true", help="Verbose logging (subcommand-scoped alias)."
@@ -357,6 +379,25 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     # a fixed filename to point at without knowing today's date stamp.
     _refresh_latest_symlink(briefs_dir, brief_path)
 
+    # v0.8: optional bilingual translation. CN is always written above;
+    # additional languages are produced from the CN markdown. We pass
+    # the deterministic CN file (not in-memory string) so the translation
+    # input is reproducible by hand from disk.
+    languages = _parse_languages(args)
+    translation_paths: list[Path] = []
+    translation_results: dict[str, TranslationResult] = {}
+    for lang in languages:
+        if lang == "CN":
+            continue
+        result, lang_path = _produce_translation(
+            brief_path=brief_path,
+            language=lang,
+            date=date,
+            args=args,
+        )
+        translation_results[lang] = result
+        translation_paths.append(lang_path)
+
     if not args.no_index:
         render_site_index(briefs_dir)
 
@@ -371,13 +412,115 @@ def _cmd_generate(args: argparse.Namespace) -> int:
         f"{name}={(p.data.get('source_mode', '?') if p else 'missing')}"
         for name, p in payloads.items()
     )
+    lang_suffix = ""
+    if translation_paths:
+        lang_tags = []
+        for lang in languages:
+            if lang == "CN":
+                continue
+            r = translation_results.get(lang)
+            status = r.status if r else "missing"
+            lang_tags.append(f"{lang}={status}")
+        lang_suffix = (
+            f" · langs={','.join(languages)} · translations=[{', '.join(lang_tags)}]"
+        )
     print(
         f"OK · wrote {brief_path} · {available_count}/5 sections available · "
-        f"{len(chart_paths)} charts{feed_suffix} · mode={args.source_mode} · "
+        f"{len(chart_paths)} charts{feed_suffix}{lang_suffix} · mode={args.source_mode} · "
         f"resolved=[{mode_summary}] · sources: "
         + ", ".join(sorted(p.source for p in payloads.values() if p is not None))
     )
     return 0
+
+
+def _parse_languages(args: argparse.Namespace) -> list[str]:
+    """Parse ``--languages`` and return a de-duplicated ordered list.
+
+    CN is always present (the deterministic ground truth is required).
+    Unknown codes raise ``SystemExit`` via the argparse-style error
+    surface so the CLI fails loudly rather than silently dropping
+    languages the user asked for.
+    """
+    raw = getattr(args, "languages", "CN") or "CN"
+    requested: list[str] = []
+    for token in raw.split(","):
+        code = token.strip().upper()
+        if not code:
+            continue
+        if code not in SUPPORTED_LANGUAGES:
+            print(
+                f"ERROR: unsupported language code {code!r}; "
+                f"supported: {','.join(SUPPORTED_LANGUAGES)}",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+        if code not in requested:
+            requested.append(code)
+    if "CN" not in requested:
+        requested.insert(0, "CN")
+    return requested
+
+
+def _produce_translation(
+    *,
+    brief_path: Path,
+    language: str,
+    date: str,
+    args: argparse.Namespace,
+) -> tuple[TranslationResult, Path]:
+    """Translate ``brief_path`` to ``language`` and write the result.
+
+    Always writes a file at the target language path — even on
+    fallback the file is valuable (it carries the banner explaining
+    the fallback to readers who only follow the EN URL).
+    Logs one entry to ``llm_usage.jsonl`` per call.
+    """
+    source_md = brief_path.read_text(encoding="utf-8")
+    target_iso = language.lower()
+    model = str(getattr(args, "llm_model", DEFAULT_LLM_MODEL))
+    result = translate_brief(
+        source_md,
+        target_language=target_iso,
+        model=model,
+    )
+    suffix = _LANG_FILE_SUFFIX.get(language, f".{target_iso}")
+    lang_path = brief_path.parent / f"{date}{suffix}.md"
+    lang_path.write_text(result.translated_md, encoding="utf-8")
+    _log_translation_usage(result, args=args, date=date, language=language)
+    return result, lang_path
+
+
+def _log_translation_usage(
+    result: TranslationResult,
+    *,
+    args: argparse.Namespace,
+    date: str,
+    language: str,
+) -> None:
+    """Shim that funnels a TranslationResult through the rephrase log_usage.
+
+    The on-disk log format already supports the fields we care about
+    (model, status, latency, tokens, cost) — we adapt our dataclass to
+    the shape :func:`log_usage` expects so all LLM activity lands in
+    one append-only JSONL.
+    """
+    from cn_altdata_brief.llm.anthropic_client import RephraseResult
+
+    adapted = RephraseResult(
+        raw_text="",  # we deliberately never persist the source markdown
+        polished_text="",  # ditto the translation
+        status=result.status if result.status != "empty_input" else "validation_failed",
+        llm_model_used=result.model_used,
+        latency_ms=result.latency_ms,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        prompt_hash=result.source_hash,
+    )
+    log_usage(
+        adapted,
+        Path(getattr(args, "llm_usage_log", DEFAULT_LLM_USAGE_LOG)),
+        extra={"date": date, "section": f"translate-{language.lower()}"},
+    )
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:
