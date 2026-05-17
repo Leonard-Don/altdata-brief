@@ -106,41 +106,15 @@ def test_render_feed_empty_dir_emits_channel(tmp_path: Path) -> None:
     assert channel.findall("item") == []
 
 
-def test_cli_generate_writes_feed(
-    tmp_path: Path,
-    super_pricing_cache: Path,
-    quant_trading_cache: Path,
-    index_research_tables: Path,
-    etf_512400_snapshot: Path,
-    monkeypatch,
-) -> None:
-    from cn_altdata_brief.adapters import etf_512400 as etf_mod
-    from cn_altdata_brief.adapters import index_research as ix_mod
-    from cn_altdata_brief.adapters import quant_trading as qt_mod
-    from cn_altdata_brief.adapters import super_pricing as sp_mod
+def test_cli_generate_writes_feed(patched_default_paths: None, tmp_path: Path) -> None:
     from cn_altdata_brief.cli import main
 
-    monkeypatch.setattr(sp_mod, "DEFAULT_CACHE_DIR", super_pricing_cache)
-    monkeypatch.setattr(qt_mod, "DEFAULT_CACHE_DIR", quant_trading_cache)
-    monkeypatch.setattr(ix_mod, "DEFAULT_TABLE_DIR", index_research_tables)
-    monkeypatch.setattr(ix_mod, "DEFAULT_FIGURE_DIR", index_research_tables)
-    monkeypatch.setattr(etf_mod, "DEFAULT_SNAPSHOT", etf_512400_snapshot)
-
     briefs = tmp_path / "briefs"
-    code = main(
-        [
-            "generate",
-            "--date",
-            "2026-05-17",
-            "--briefs-dir",
-            str(briefs),
-            "--charts-dir",
-            str(tmp_path / "charts"),
-            "--no-charts",
-            "--site-url",
-            "https://example.com/cn-altdata-brief",
-        ]
-    )
+    code = main([
+        "generate", "--date", "2026-05-17",
+        "--briefs-dir", str(briefs), "--charts-dir", str(tmp_path / "charts"),
+        "--no-charts", "--site-url", "https://example.com/cn-altdata-brief",
+    ])
     assert code == 0
     feed = tmp_path / "feed.xml"
     assert feed.exists()
