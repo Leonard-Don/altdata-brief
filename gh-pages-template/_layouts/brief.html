@@ -1,12 +1,54 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+{%- assign page_lang = page.lang | default: 'zh-CN' -%}
+{%- assign brief_title = page.og_title | default: page.title | default: site.title | default: 'CN AltData Brief' -%}
+{%- assign brief_description = page.og_description | default: site.description | default: '' -%}
+{%- assign brief_url = page.og_url | default: page.url | absolute_url -%}
+{%- assign og_locale = page.og_locale | default: 'zh_CN' -%}
+{%- assign site_name = site.title | default: 'CN AltData Brief' -%}
+{%- assign article_time = page.article_published | default: page.date | date_to_xmlschema -%}
+{%- assign article_section = page.og_section | default: 'Alt Data' -%}
+{%- assign twitter_handle = page.twitter_handle | default: '@cn_altdata' -%}
+{%- assign share_title = brief_title | url_encode -%}
+{%- assign share_url = brief_url | url_encode -%}
+<html lang="{{ page_lang | escape }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ page.title | default: site.title }}</title>
-  <meta name="description" content="{{ site.description }}">
+  <title>{{ brief_title | escape }}</title>
+  <meta name="description" content="{{ brief_description | escape }}">
+
+  {%- comment -%}
+  v0.10 — OpenGraph + Twitter Card metadata. Front-matter keys
+  (og_title, og_description, og_image, og_url, twitter_handle,
+  og_locale, og_section, article_published) are written into each
+  brief markdown by the Python publisher. If a brief is opened on a
+  branch that predates v0.10 the |default filters keep the page valid.
+  {%- endcomment -%}
+  <meta property="og:title" content="{{ brief_title | escape }}">
+  <meta property="og:description" content="{{ brief_description | escape }}">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="{{ brief_url | escape }}">
+  {%- unless page.og_image == blank -%}
+  {%- assign og_image_url = page.og_image | absolute_url -%}
+  <meta property="og:image" content="{{ og_image_url | escape }}">
+  {%- endunless -%}
+  <meta property="og:locale" content="{{ og_locale | escape }}">
+  <meta property="og:site_name" content="{{ site_name | escape }}">
+  <meta property="article:published_time" content="{{ article_time | escape }}">
+  <meta property="article:section" content="{{ article_section | escape }}">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="{{ twitter_handle | escape }}">
+  <meta name="twitter:title" content="{{ brief_title | escape }}">
+  <meta name="twitter:description" content="{{ brief_description | escape }}">
+  {%- unless page.og_image == blank -%}
+  <meta name="twitter:image" content="{{ og_image_url | escape }}">
+  {%- endunless -%}
+
   <link rel="alternate" type="application/rss+xml" title="CN AltData Brief RSS"
-        href="{{ '/feed.xml' | relative_url }}">
+        href="{{ '/feed.xml' | relative_url | escape }}">
+  <link rel="alternate" type="application/atom+xml" title="CN AltData Brief Atom"
+        href="{{ '/feed.atom' | relative_url | escape }}">
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue",
@@ -29,13 +71,26 @@
     th, td { border: 1px solid #d0d7de; padding: 6px 12px; }
     th { background: #f6f8fa; }
     hr { border: none; border-top: 1px solid #d0d7de; margin: 2rem 0; }
+    .share-bar {
+      display: flex; flex-wrap: wrap; gap: 0.5rem;
+      margin: 1rem 0; padding: 0.75rem; background: #f6f8fa;
+      border: 1px solid #d0d7de; border-radius: 6px;
+    }
+    .share-bar a {
+      padding: 4px 10px; border: 1px solid #d0d7de;
+      border-radius: 4px; background: #ffffff;
+      color: #0969da; text-decoration: none; font-size: 0.85rem;
+    }
+    .share-bar a:hover { background: #f6f8fa; }
   </style>
 </head>
 <body>
   <header>
-    <a href="{{ '/' | relative_url }}">← 全部简报 / All briefs</a>
+    <a href="{{ '/' | relative_url | escape }}">← 全部简报 / All briefs</a>
     &nbsp;·&nbsp;
-    <a href="{{ '/feed.xml' | relative_url }}">RSS</a>
+    <a href="{{ '/feed.xml' | relative_url | escape }}">RSS</a>
+    &nbsp;·&nbsp;
+    <a href="{{ '/feed.atom' | relative_url | escape }}">Atom</a>
     &nbsp;·&nbsp;
     <a href="https://github.com/Leonard-Don/cn-altdata-brief">GitHub</a>
   </header>
@@ -44,6 +99,16 @@
     {{ content }}
   </main>
   <hr>
+  <nav class="share-bar" aria-label="分享 / Share">
+    <span>分享 / Share:</span>
+    <a href="https://twitter.com/intent/tweet?text={{ share_title | escape }}&amp;url={{ share_url | escape }}"
+       target="_blank" rel="noopener">Twitter</a>
+    <a href="https://www.linkedin.com/sharing/share-offsite/?url={{ share_url | escape }}"
+       target="_blank" rel="noopener">LinkedIn</a>
+    <a href="https://t.me/share/url?url={{ share_url | escape }}&amp;text={{ share_title | escape }}"
+       target="_blank" rel="noopener">Telegram</a>
+    <a href="mailto:?subject={{ share_title | escape }}&amp;body={{ share_url | escape }}">Email</a>
+  </nav>
   <footer>
     <p>
       Generated by

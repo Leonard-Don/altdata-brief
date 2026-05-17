@@ -84,6 +84,7 @@ class PublishPlan:
     brief_source: Path
     chart_source: Path | None
     feed_source: Path | None
+    atom_source: Path | None = None
     files_to_copy: list[Path] = field(default_factory=list)
     index_briefs: list[str] = field(default_factory=list)
     index_digests: list[str] = field(default_factory=list)
@@ -155,10 +156,12 @@ class GhPagesPublisher:
         gh_pages_branch: str = _DEFAULT_BRANCH,
         git_executable: str = "git",
         digest_dir: Path | None = None,
+        atom_path: Path | None = None,
     ) -> None:
         self.brief_dir = Path(brief_dir)
         self.chart_dir = Path(chart_dir) if chart_dir is not None else None
         self.feed_path = Path(feed_path) if feed_path is not None else None
+        self.atom_path = Path(atom_path) if atom_path is not None else None
         self.repo_root = Path(repo_root) if repo_root is not None else Path.cwd()
         self.template_dir = (
             Path(template_dir)
@@ -198,6 +201,9 @@ class GhPagesPublisher:
         feed_source = (
             self.feed_path if (self.feed_path and self.feed_path.exists()) else None
         )
+        atom_source = (
+            self.atom_path if (self.atom_path and self.atom_path.exists()) else None
+        )
 
         files_to_copy: list[Path] = [brief_path]
         # v0.8: pick up bilingual siblings. Each ``YYYY-MM-DD.<lang>.md``
@@ -207,6 +213,8 @@ class GhPagesPublisher:
             files_to_copy.extend(sorted(chart_subdir.glob("*.png")))
         if feed_source is not None:
             files_to_copy.append(feed_source)
+        if atom_source is not None:
+            files_to_copy.append(atom_source)
 
         # v0.9 — pick up any weekly digests sitting in ``digest_dir``.
         # We publish ALL existing digests on every run (cheap; a few kb
@@ -227,6 +235,7 @@ class GhPagesPublisher:
             brief_source=brief_path,
             chart_source=chart_subdir,
             feed_source=feed_source,
+            atom_source=atom_source,
             files_to_copy=files_to_copy,
             index_briefs=all_dates,
             index_digests=digest_stems,
@@ -564,6 +573,10 @@ class GhPagesPublisher:
         if plan.feed_source is not None:
             shutil.copy2(plan.feed_source, self.repo_root / plan.feed_source.name)
 
+        # 3b. v0.10 — Atom 1.0 feed alongside the RSS feed.
+        if plan.atom_source is not None:
+            shutil.copy2(plan.atom_source, self.repo_root / plan.atom_source.name)
+
         # 4. v0.9 — weekly digests → ``digests/<iso_year>-W<week>.md``.
         if plan.digest_sources:
             digests_target_dir = self.repo_root / "digests"
@@ -598,6 +611,9 @@ class GhPagesPublisher:
         v0.9 — also lists weekly digests (``<iso_year>-W<week>``) in
         their own section. Same EN-sibling detection logic, but the
         digests live under ``digests/`` not ``briefs/``.
+
+        v0.10 — also detects which chart PNG sits under ``charts/<date>/``
+        so the index can render a 48px thumbnail preview per row.
         """
         briefs_root = self.repo_root / "briefs"
         languages_per_date = {
@@ -607,12 +623,17 @@ class GhPagesPublisher:
         languages_per_digest = {
             stem: _detect_languages_for(digests_root, stem) for stem in (digest_stems or [])
         }
+        charts_root = self.repo_root / "charts"
+        previews_per_date = {
+            stem: _detect_preview_chart(charts_root, stem) for stem in dated_briefs
+        }
         target = self.repo_root / "index.md"
         body = _render_index_md(
             dated_briefs,
             languages_per_date=languages_per_date,
             digest_stems=digest_stems or [],
             languages_per_digest=languages_per_digest,
+            previews_per_date=previews_per_date,
         )
         target.write_text(body, encoding="utf-8")
 
@@ -644,22 +665,21 @@ def _render_index_md(
     languages_per_date: dict[str, list[str]] | None = None,
     digest_stems: list[str] | None = None,
     languages_per_digest: dict[str, list[str]] | None = None,
+    previews_per_date: dict[str, str | None] | None = None,
 ) -> str:
     """Render the gh-pages landing page.
 
     Public format — kept stable so subscribers can scrape it. v0.8
-    splits the brief column into Chinese / English (CN ground truth +
-    LLM translation). v0.9 adds a separate "本周回顾 / Weekly digests"
-    section listing the digest files under ``digests/`` (the dailies
-    stay in ``briefs/``). ``digest_stems``, ``languages_per_digest``,
-    and ``languages_per_date`` are all optional so callers from
-    pre-v0.9 publish runs still produce identical-shape output.
+    splits the brief column into Chinese / English. v0.9 adds a
+    separate "本周回顾 / Weekly digests" section. v0.10 adds a chart
+    thumbnail column + RSS/Atom subscribe + share buttons.
     """
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = [
         "---",
         "layout: default",
         "title: CN AltData Brief",
+        "description: Daily research brief over China-equity alt-data, synthesized from 6 quant projects.",
         "---",
         "",
         "# CN AltData Brief — 中国另类数据日报",
@@ -671,25 +691,46 @@ def _render_index_md(
         "",
         f"_Last regenerated: {now}_",
         "",
-        "[RSS feed](feed.xml) · ",
-        "[Source code](https://github.com/Leonard-Don/cn-altdata-brief)",
+        '<section class="subscribe-bar" markdown="0">',
+        "  <strong>订阅 / Subscribe:</strong>",
+        '  <a class="sub-btn rss" href="feed.xml">RSS 2.0</a>',
+        '  <a class="sub-btn atom" href="feed.atom">Atom 1.0</a>',
+        '  <a class="sub-btn github" href="https://github.com/Leonard-Don/cn-altdata-brief">Source</a>',
+        "</section>",
+        "",
+        '<section class="share-bar" markdown="0">',
+        "  <strong>分享 / Share:</strong>",
+        '  <a href="https://twitter.com/intent/tweet?text=CN%20AltData%20Brief&url=https%3A%2F%2Fleonard-don.github.io%2Fcn-altdata-brief">Twitter</a>',
+        '  <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fleonard-don.github.io%2Fcn-altdata-brief">LinkedIn</a>',
+        '  <a href="https://t.me/share/url?url=https%3A%2F%2Fleonard-don.github.io%2Fcn-altdata-brief&text=CN%20AltData%20Brief">Telegram</a>',
+        "</section>",
         "",
         "## 简报列表 / Briefs archive",
         "",
-        "| 日期 / Date | 中文 / Chinese | English |",
-        "|---|---|---|",
+        "| 日期 / Date | 预览 / Preview | 中文 / Chinese | English |",
+        "|---|---|---|---|",
     ]
     if not dated_briefs:
-        lines.append("| _(暂无 / none yet)_ | — | — |")
+        lines.append("| _(暂无 / none yet)_ | — | — | — |")
     else:
         for stem in dated_briefs:
             langs = (languages_per_date or {}).get(stem, [])
+            preview = (previews_per_date or {}).get(stem)
+            if preview:
+                preview_cell = (
+                    f'<img src="charts/{stem}/{preview}" alt="{stem} preview" '
+                    f'style="max-height:48px;border:1px solid #d0d7de;border-radius:3px">'
+                )
+            else:
+                preview_cell = "—"
             cn_cell = f"[{stem}.md](briefs/{stem}.md)"
             if "en" in langs:
                 en_cell = f"[{stem}.en.md](briefs/{stem}.en.md)"
             else:
                 en_cell = "—"
-            lines.append(f"| {stem} | {cn_cell} | {en_cell} |")
+            lines.append(
+                f"| {stem} | {preview_cell} | {cn_cell} | {en_cell} |"
+            )
     lines.append("")
     lines.append("## 本周回顾 / Weekly digests")
     lines.append("")
@@ -707,11 +748,49 @@ def _render_index_md(
                 en_cell = "—"
             lines.append(f"| {stem} | {cn_cell} | {en_cell} |")
     lines.append("")
+    lines.append("<style>")
+    lines.append(
+        ".subscribe-bar, .share-bar { display: flex; flex-wrap: wrap; gap: 0.5rem; "
+        "align-items: center; margin: 1rem 0; padding: 0.75rem; background: #f6f8fa; "
+        "border: 1px solid #d0d7de; border-radius: 6px; }"
+    )
+    lines.append(
+        ".sub-btn, .share-bar a { padding: 4px 10px; border: 1px solid #d0d7de; "
+        "border-radius: 4px; background: #ffffff; color: #0969da; text-decoration: none; "
+        "font-size: 0.85rem; }"
+    )
+    lines.append(".sub-btn:hover, .share-bar a:hover { background: #eaeef2; }")
+    lines.append("</style>")
+    lines.append("")
     lines.append("---")
     lines.append("")
     lines.append("Generated by [`cn-altdata-brief`](https://github.com/Leonard-Don/cn-altdata-brief) · MIT")
     lines.append("")
     return "\n".join(lines)
+
+
+def _detect_preview_chart(charts_root: Path, date_stem: str) -> str | None:
+    """Return the filename of a preview-worthy chart for ``date_stem``.
+
+    Walks ``charts/<date_stem>/`` and picks the first PNG that exists,
+    in the same priority order as the OG image picker (policy → inv →
+    industry → nav). Returns ``None`` when no charts exist for that
+    date, in which case the index row shows an em-dash.
+    """
+    if not charts_root.exists():
+        return None
+    date_dir = charts_root / date_stem
+    if not date_dir.exists():
+        return None
+    for candidate in (
+        "policy_impact.png",
+        "inventory_change.png",
+        "industry_heat.png",
+        "etf_nav.png",
+    ):
+        if (date_dir / candidate).exists():
+            return candidate
+    return None
 
 
 def _looks_like_digest_stem(stem: str) -> bool:
@@ -757,6 +836,11 @@ def default_chart_dir() -> Path:
 
 def default_feed_path() -> Path:
     return Path(__file__).resolve().parents[3] / "output" / "feed.xml"
+
+
+def default_atom_path() -> Path:
+    """v0.10 — Atom 1.0 feed at ``output/feed.atom``."""
+    return Path(__file__).resolve().parents[3] / "output" / "feed.atom"
 
 
 def utc_today() -> str:

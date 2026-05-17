@@ -122,6 +122,36 @@ def test_cli_generate_writes_feed(patched_default_paths: None, tmp_path: Path) -
     assert "2026-05-17" in (item.findtext("title") or "")
 
 
+def test_cli_generate_uses_real_default_site_url(
+    patched_default_paths: None, tmp_path: Path
+) -> None:
+    from cn_altdata_brief.cli import DEFAULT_SITE_URL, main
+
+    briefs = tmp_path / "briefs"
+    code = main(
+        [
+            "generate",
+            "--date",
+            "2026-05-17",
+            "--briefs-dir",
+            str(briefs),
+            "--charts-dir",
+            str(tmp_path / "charts"),
+            "--no-charts",
+        ]
+    )
+    assert code == 0
+    feed = tmp_path / "feed.xml"
+    root = ET.parse(feed).getroot()
+    channel = root.find("channel")
+    assert channel.findtext("link") == DEFAULT_SITE_URL
+    assert channel.findtext("item/link", "").startswith(f"{DEFAULT_SITE_URL}/briefs/")
+    brief_text = (briefs / "2026-05-17.md").read_text(encoding="utf-8")
+    assert DEFAULT_SITE_URL in brief_text
+    assert "example.github.io" not in feed.read_text(encoding="utf-8")
+    assert "example.github.io" not in brief_text
+
+
 def test_render_feed_merges_weekly_digests(tmp_path: Path) -> None:
     """v0.9 — when ``digests_dir`` is supplied, weekly digests merge into the same feed."""
     briefs = tmp_path / "briefs"

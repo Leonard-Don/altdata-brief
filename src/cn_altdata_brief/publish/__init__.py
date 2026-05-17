@@ -5,9 +5,17 @@ from cn_altdata_brief.publish.gh_pages import (
     PublishPlan,
     PublishResult,
 )
+from cn_altdata_brief.publish.og_metadata import (
+    generate_og_tags,
+    render_meta_tags,
+    signal_categories_for,
+)
 
 __all__ = [
     "GhPagesPublisher",
     "PublishPlan",
     "PublishResult",
+    "generate_og_tags",
+    "render_meta_tags",
+    "signal_categories_for",
 ]
