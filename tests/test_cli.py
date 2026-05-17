@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -236,6 +237,121 @@ def test_cli_validate_json_success(
     assert len(payload["checks"]) == 5
     names = [c["name"] for c in payload["checks"]]
     assert "public_summary_freshness" in names
+
+
+def test_cli_publish_passes_default_atom_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """CLI publish wires the default Atom path into GhPagesPublisher."""
+    captured: dict[str, Path | bool | str] = {}
+
+    class FakePublisher:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+        def publish(self, date: str, *, push: bool, dry_run: bool):
+            captured["publish_date"] = date
+            captured["publish_push"] = push
+            captured["publish_dry_run"] = dry_run
+            return SimpleNamespace(
+                dry_run=True,
+                pushed=False,
+                commit_sha=None,
+                original_branch="main",
+                message="fake publish plan",
+                plan=SimpleNamespace(
+                    files_to_copy=[],
+                    branch="gh-pages",
+                    will_create_orphan=False,
+                    index_briefs=[],
+                ),
+            )
+
+    monkeypatch.setattr(cli_mod, "GhPagesPublisher", FakePublisher)
+    code = main(
+        [
+            "publish",
+            "--date",
+            "2026-05-17",
+            "--briefs-dir",
+            str(tmp_path / "briefs"),
+            "--charts-dir",
+            str(tmp_path / "charts"),
+            "--feed-path",
+            str(tmp_path / "feed.xml"),
+            "--repo-root",
+            str(tmp_path / "repo"),
+            "--template-dir",
+            str(tmp_path / "template"),
+            "--dry-run",
+            "--no-push",
+        ]
+    )
+
+    assert code == 0
+    assert captured["atom_path"] == cli_mod.DEFAULT_ATOM_PATH
+    assert captured["publish_push"] is False
+    assert captured["publish_dry_run"] is True
+
+
+def test_cli_publish_passes_explicit_atom_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """CLI publish preserves an explicit --atom-path override."""
+    captured: dict[str, Path | bool | str] = {}
+
+    class FakePublisher:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+        def publish(self, date: str, *, push: bool, dry_run: bool):
+            captured["publish_date"] = date
+            captured["publish_push"] = push
+            captured["publish_dry_run"] = dry_run
+            return SimpleNamespace(
+                dry_run=True,
+                pushed=False,
+                commit_sha=None,
+                original_branch="main",
+                message="fake publish plan",
+                plan=SimpleNamespace(
+                    files_to_copy=[],
+                    branch="gh-pages",
+                    will_create_orphan=False,
+                    index_briefs=[],
+                ),
+            )
+
+    monkeypatch.setattr(cli_mod, "GhPagesPublisher", FakePublisher)
+    atom_path = tmp_path / "custom-feed.atom"
+    code = main(
+        [
+            "publish",
+            "--date",
+            "2026-05-17",
+            "--briefs-dir",
+            str(tmp_path / "briefs"),
+            "--charts-dir",
+            str(tmp_path / "charts"),
+            "--feed-path",
+            str(tmp_path / "feed.xml"),
+            "--atom-path",
+            str(atom_path),
+            "--repo-root",
+            str(tmp_path / "repo"),
+            "--template-dir",
+            str(tmp_path / "template"),
+            "--dry-run",
+            "--no-push",
+        ]
+    )
+
+    assert code == 0
+    assert captured["atom_path"] == atom_path
+    assert captured["feed_path"] == tmp_path / "feed.xml"
+    assert captured["publish_date"] == "2026-05-17"
 
 
 def test_cli_help_works(capsys: pytest.CaptureFixture[str]) -> None:
