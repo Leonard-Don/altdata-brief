@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -23,6 +24,20 @@ from cn_altdata_brief.llm.anthropic_client import (
 )
 
 logger = logging.getLogger(__name__)
+
+_SENSITIVE_USAGE_KEYS = {"raw_text", "polished_text"}
+_PUBLIC_EXTRA_KEYS = {"date", "section"}
+_KNOWN_STATUS_LABELS = {
+    "ok",
+    "sdk_missing",
+    "api_key_missing",
+    "api_error",
+    "validation_failed",
+    "too_long",
+    "disabled",
+    "skipped_no_signal",
+}
+_MODEL_LABEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,95}$")
 
 
 def estimate_cost_usd(
@@ -62,7 +77,7 @@ def log_usage(
         "prompt_hash": result.prompt_hash[:16] if result.prompt_hash else "",
     }
     if extra:
-        record.update(extra)
+        record.update(_safe_usage_extra(extra))
 
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -142,27 +157,30 @@ def aggregate_usage(
                 rec = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if not isinstance(rec, dict):
+                continue
             ts_raw = rec.get("timestamp")
-            if cutoff is not None and ts_raw:
+            ts_label = ts_raw if isinstance(ts_raw, str) else None
+            if cutoff is not None and ts_label:
                 try:
-                    ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+                    ts = datetime.fromisoformat(ts_label.replace("Z", "+00:00"))
                 except ValueError:
                     ts = None
                 if ts is not None and ts < cutoff:
                     continue
 
             total += 1
-            status = rec.get("status", "unknown")
+            status = _safe_status(rec.get("status"))
             per_status[status] = per_status.get(status, 0) + 1
             if status == "ok":
                 ok += 1
             else:
                 fallback += 1
-            model = rec.get("model") or "(none)"
+            model = _safe_model(rec.get("model"))
             per_model[model] = per_model.get(model, 0) + 1
 
-            input_total += int(rec.get("input_tokens") or 0)
-            output_total += int(rec.get("output_tokens") or 0)
+            input_total += _safe_nonnegative_int(rec.get("input_tokens"))
+            output_total += _safe_nonnegative_int(rec.get("output_tokens"))
             latency = rec.get("latency_ms")
             if latency is not None:
                 try:
@@ -174,10 +192,10 @@ def aggregate_usage(
             except (TypeError, ValueError):
                 pass
 
-            if first_ts is None or (ts_raw and ts_raw < first_ts):
-                first_ts = ts_raw
-            if last_ts is None or (ts_raw and ts_raw > last_ts):
-                last_ts = ts_raw
+            if first_ts is None or (ts_label and ts_label < first_ts):
+                first_ts = ts_label
+            if last_ts is None or (ts_label and ts_label > last_ts):
+                last_ts = ts_label
 
     avg_latency = sum(latencies) / len(latencies) if latencies else None
     return UsageAggregate(
@@ -194,3 +212,69 @@ def aggregate_usage(
         first_ts=first_ts,
         last_ts=last_ts,
     )
+
+
+def _safe_nonnegative_int(value: Any) -> int:
+    if value is None or isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _safe_usage_extra(extra: dict[str, Any]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for key, value in extra.items():
+        if not isinstance(key, str):
+            continue
+        label = key.strip().lower()
+        if label not in _PUBLIC_EXTRA_KEYS:
+            continue
+        safe_value = _safe_metadata_value(value, max_length=32)
+        if safe_value is not None:
+            out[label] = safe_value
+    return out
+
+
+def _safe_metadata_value(value: Any, *, max_length: int) -> str | None:
+    label = _safe_public_label(value, default="", max_length=max_length)
+    if label in {"", "(redacted)"}:
+        return None
+    if _MODEL_LABEL_RE.fullmatch(label) is None:
+        return None
+    return label
+
+
+def _safe_status(value: Any) -> str:
+    label = _safe_public_label(value, default="unknown", max_length=64)
+    if label in _KNOWN_STATUS_LABELS:
+        return label
+    return "unknown"
+
+
+def _safe_model(value: Any) -> str:
+    label = _safe_public_label(value, default="(none)", max_length=96)
+    if label == "(none)":
+        return label
+    if label == "(redacted)" or _MODEL_LABEL_RE.fullmatch(label) is None:
+        return "(redacted)"
+    return label
+
+
+def _safe_public_label(value: Any, *, default: str, max_length: int) -> str:
+    if value is None:
+        return default
+    if not isinstance(value, str):
+        return default
+    label = value.strip()
+    if not label:
+        return default
+    lowered = label.lower()
+    if (
+        len(label) > max_length
+        or any(ch in label for ch in "\r\n\t")
+        or any(key in lowered for key in _SENSITIVE_USAGE_KEYS)
+    ):
+        return "(redacted)"
+    return label
