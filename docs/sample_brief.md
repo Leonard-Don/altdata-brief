@@ -54,9 +54,9 @@
 ---
 ## 5. 本日观察
 
-> 政策口径继续向 **新能源汽车** 倾斜（偏空，avg_impact=-0.388，mentions=94），是当前 policy_radar 的最强信号源。
-> 金属库存价格变化分歧度较低（spread < 0.5%），上下游分化暂未发酵。
-> ETF 512400 日内 NAV 上涨 3.85%，数据源评级 **良好**，可在收盘后复核折溢价、申赎与数据源一致性。
+> 今日核心信号是 ETF 512400 日内 NAV 上涨 3.85%，数据源评级 **良好**。
+> 对比近 7 日波动均值 ≈0.60%，今日波幅显著走强；商品驱动子源 5/5 OK。
+> 若该信号延续 3 日，可重点观察有色金属现货成交，收盘后复核折溢价、申赎与数据源一致性。
 
 **Sources:** super-pricing-system::policy_radar.json · ETF-512400::liveSnapshot.json · quant-trading-system::policy_radar.json · index-inclusion-research::cma_hypothesis_verdicts.csv
 

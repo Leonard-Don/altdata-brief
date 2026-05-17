@@ -67,6 +67,7 @@ def render_feed(
         ET.SubElement(item_el, "pubDate").text = item["pub_date"]
         ET.SubElement(item_el, "description").text = item["description"]
 
+    ET.indent(rss, space="  ", level=0)  # human-readable pretty-print
     xml_bytes = ET.tostring(rss, encoding="utf-8", xml_declaration=True)
     feed_path.write_bytes(xml_bytes)
     return feed_path

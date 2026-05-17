@@ -28,6 +28,15 @@ jobs:
         with:
           enable-cache: true
 
+      # CJK fonts must be installed BEFORE matplotlib is first imported so
+      # the font manager picks up Noto Sans CJK during its initial cache
+      # build. Without this, charts render Chinese labels as tofu.
+      - name: Install Noto CJK fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          fc-cache -fv
+
       - run: uv sync
 
       # In v0.2 the upstream caches live on the maintainer's laptop only.

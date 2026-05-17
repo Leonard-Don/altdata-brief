@@ -6,8 +6,12 @@
 #
 # Exit codes:
 #   0 — brief written successfully
-#   2 — all adapters failed; investigate upstream caches
+#   2 — validate or generate failed; investigate upstream caches
 #  >0 — uv / environment failure
+#
+# v0.2 adds a pre-flight `validate` pass. The brief refuses to publish
+# when the data-quality preconditions trip — empty industries, NaN
+# metals, stale ETF snapshot, or incomplete CMA verdicts.
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -19,4 +23,18 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 uv sync --quiet
+
+# Pre-flight: refuse to generate when data-quality preconditions FAIL.
+# WARN-level signals (e.g. stale ETF snapshot) are tolerated locally;
+# CI uses `--fail-on-warn` to be stricter.
+echo "[generate_daily] pre-flight validate ..."
+if ! uv run cn-altdata-brief validate; then
+    rc=$?
+    if [ "$rc" -ge 2 ]; then
+        echo "[generate_daily] validate FAILED (exit=$rc); aborting before publish."
+        exit "$rc"
+    fi
+    echo "[generate_daily] validate emitted warnings (exit=$rc); continuing."
+fi
+
 uv run cn-altdata-brief generate --verbose

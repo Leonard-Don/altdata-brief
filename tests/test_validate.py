@@ -49,25 +49,7 @@ def all_payloads(
     }
 
 
-@pytest.fixture
-def patched_default_paths(
-    monkeypatch: pytest.MonkeyPatch,
-    super_pricing_cache: Path,
-    quant_trading_cache: Path,
-    index_research_tables: Path,
-    etf_512400_snapshot: Path,
-) -> None:
-    from cn_altdata_brief.adapters import etf_512400 as etf_mod
-    from cn_altdata_brief.adapters import index_research as ix_mod
-    from cn_altdata_brief.adapters import quant_trading as qt_mod
-    from cn_altdata_brief.adapters import super_pricing as sp_mod
-
-    monkeypatch.setattr(sp_mod, "DEFAULT_CACHE_DIR", super_pricing_cache)
-    monkeypatch.setattr(qt_mod, "DEFAULT_CACHE_DIR", quant_trading_cache)
-    monkeypatch.setattr(ix_mod, "DEFAULT_TABLE_DIR", index_research_tables)
-    monkeypatch.setattr(ix_mod, "DEFAULT_FIGURE_DIR", index_research_tables)
-    monkeypatch.setattr(etf_mod, "DEFAULT_SNAPSHOT", etf_512400_snapshot)
-
+# patched_default_paths fixture lives in conftest.py and is shared.
 
 # -- individual check predicates ---------------------------------------
 
