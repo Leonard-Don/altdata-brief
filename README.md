@@ -169,5 +169,5 @@ SMOKE_FIXTURE=1 bash scripts/smoke_e2e.sh   # 跑 tests/fixtures/ 里的固定�
 
 MIT.
 
-* Author: Tang Zihan ([Leonard-Don](https://github.com/Leonard-Don))
+* Author: [Leonard-Don](https://github.com/Leonard-Don)
 * For outsourcing / collaboration inquiries: this repo IS my portfolio — open an issue or DM on Boss/Upwork.
