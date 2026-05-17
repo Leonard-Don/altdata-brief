@@ -1,5 +1,59 @@
 # Changelog
 
+## v0.8 — 2026-05-17
+
+**feat: v0.8 — bilingual EN translation via Claude API**
+
+* `src/cn_altdata_brief/llm/translate.py` — new `translate_brief()`
+  entry point and `TranslationResult` dataclass; CN brief stays the
+  ground truth and the EN translation is an additive side-channel.
+* `src/cn_altdata_brief/llm/industry_mapping.json` — hand-curated
+  CN→EN mapping for 45 industries, 18 commodities, 6 instruments,
+  6 section headings, and 25 high-frequency phrases. Used both as
+  glossary in the prompt and as the validation guard target.
+* CLI: new `--languages CN,EN` flag on `generate`. Each language
+  becomes its own file (`output/briefs/YYYY-MM-DD.md` for CN,
+  `YYYY-MM-DD.en.md` for EN). Unsupported codes fail loudly.
+* GitHub Pages publisher: copies `*.en.md` siblings, adds a third
+  column to the index (`日期 / Date | 中文 / Chinese | English`),
+  rewrites the template to advertise the bilingual format.
+* RSS feed: one `<item>` per language per date. EN items are
+  title-prefixed `[EN]`, get a `:en` GUID suffix, and carry a
+  per-item `<language>en</language>` tag.
+* Tests: 11 new tests under `tests/test_translation.py` (mock the
+  Anthropic SDK end-to-end; no real API calls). Total suite: 135
+  tests, all green.
+* `pyproject.toml` bumped to 0.8.0; `industry_mapping.json` packaged
+  as data so installed wheels carry the mapping.
+
+### Bilingual contract
+
+* CN is ALWAYS produced (deterministic).
+* EN is requested via `--languages CN,EN` (or `EN` shorthand auto-
+  prepends CN). When the SDK or API key is absent, or validation
+  fails, the EN file is still written — with a banner explaining the
+  fallback and the original CN content beneath, so URL subscribers
+  never get a 404.
+* Validation: every number in the CN source must survive in EN; every
+  bolded CN industry name must map to its glossary English term (or
+  remain untranslated as a deliberate fallback).
+
+### Cost estimate
+
+* Per bilingual day: ~1500 input + ~1000 output tokens →
+  ~$0.0195 / day on claude-3-5-sonnet pricing (≈$7 / year if run
+  365 days). Tracked per call in `output/llm_usage.jsonl`.
+
+### What was deferred to v0.9
+
+* Caching / dedup of identical CN inputs (skip the API call when
+  `source_hash` is unchanged from the previous publish).
+* Additional languages (`JP`, `KR`, `ES`) — scaffolding is in place;
+  add the language code + suffix mapping in `cli.py` and extend
+  `industry_mapping.json` with the target-language glossary.
+
+---
+
 ## v0.6 — 2026-05-17
 
 **feat: v0.6 — gh-pages publisher + Jekyll site**

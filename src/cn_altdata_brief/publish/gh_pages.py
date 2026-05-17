@@ -182,6 +182,9 @@ class GhPagesPublisher:
         )
 
         files_to_copy: list[Path] = [brief_path]
+        # v0.8: pick up bilingual siblings. Each ``YYYY-MM-DD.<lang>.md``
+        # next to the CN file is shipped under the same name.
+        files_to_copy.extend(self._collect_language_variants(date_str))
         if chart_subdir is not None:
             files_to_copy.extend(sorted(chart_subdir.glob("*.png")))
         if feed_source is not None:
@@ -202,6 +205,15 @@ class GhPagesPublisher:
             index_briefs=all_dates,
             will_create_orphan=will_create_orphan,
         )
+
+    def _collect_language_variants(self, date_str: str) -> list[Path]:
+        """Return ``YYYY-MM-DD.<lang>.md`` siblings of the CN brief.
+
+        Order is alphabetical by language code, which keeps EN first
+        (the only translation we currently emit). The list excludes
+        the canonical CN file because :meth:`plan` already appended it.
+        """
+        return sorted(self.brief_dir.glob(f"{date_str}.*.md"))
 
     def plan_only(self, date_str: str) -> PublishResult:
         """Convenience wrapper around :meth:`plan` returning a `PublishResult`."""
@@ -442,24 +454,38 @@ class GhPagesPublisher:
         branch exists, we rely on the worktree state after checkout —
         but during planning we don't have that yet, so we use the brief
         source dir as the best approximation.
+
+        v0.8 — we filter out language-suffixed files (``.en.md``,
+        ``.jp.md``, ...) so the index is keyed by date only; the
+        per-date row in :func:`_render_index_md` then probes for
+        sibling language files to fill the EN column.
         """
-        names = {
-            p.stem
-            for p in self.brief_dir.glob("*.md")
-            if p.stem not in {"index", "latest"}
-        }
+        names: set[str] = set()
+        for p in self.brief_dir.glob("*.md"):
+            stem = p.stem
+            if stem in {"index", "latest"}:
+                continue
+            if "." in stem:  # date.en, date.jp, ... — handled per row
+                continue
+            names.add(stem)
         if extra:
             names.add(extra)
         return sorted(names, reverse=True)
 
     def _copy_into_worktree(self, plan: PublishPlan) -> None:
-        # 1. Brief markdown → ``briefs/<date>.md`` at repo root.
+        # 1. Brief markdown → ``briefs/<date>.md`` at repo root, plus
+        #    every ``<date>.<lang>.md`` sibling discovered by
+        #    :meth:`_collect_language_variants`. We re-scan the source
+        #    dir rather than relying on ``plan.files_to_copy`` so the
+        #    copy logic stays self-contained and idempotent.
         briefs_target_dir = self.repo_root / "briefs"
         briefs_target_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(
             plan.brief_source,
             briefs_target_dir / plan.brief_source.name,
         )
+        for lang_md in self._collect_language_variants(plan.date):
+            shutil.copy2(lang_md, briefs_target_dir / lang_md.name)
 
         # 2. Charts → ``charts/<date>/*.png``.
         if plan.chart_source is not None:
@@ -489,9 +515,19 @@ class GhPagesPublisher:
             shutil.copy2(src, dst)
 
     def _write_index_md(self, dated_briefs: list[str]) -> None:
-        """Emit the public landing page listing every published brief."""
+        """Emit the public landing page listing every published brief.
+
+        v0.8 — looks for sibling ``YYYY-MM-DD.en.md`` files inside the
+        gh-pages ``briefs/`` directory (which we just wrote to) and
+        passes a per-date language map to :func:`_render_index_md`.
+        Dates without an EN file render an em-dash in the EN column.
+        """
+        briefs_root = self.repo_root / "briefs"
+        languages_per_date = {
+            stem: _detect_languages_for(briefs_root, stem) for stem in dated_briefs
+        }
         target = self.repo_root / "index.md"
-        body = _render_index_md(dated_briefs)
+        body = _render_index_md(dated_briefs, languages_per_date=languages_per_date)
         target.write_text(body, encoding="utf-8")
 
     # ------------------------------------------------------------------
@@ -516,10 +552,18 @@ class GhPagesPublisher:
 # ---------------------------------------------------------------------------
 
 
-def _render_index_md(dated_briefs: list[str]) -> str:
+def _render_index_md(
+    dated_briefs: list[str],
+    *,
+    languages_per_date: dict[str, list[str]] | None = None,
+) -> str:
     """Render the gh-pages landing page.
 
-    Public format — kept stable so subscribers can scrape it.
+    Public format — kept stable so subscribers can scrape it. v0.8
+    splits the brief column into Chinese / English (CN ground truth +
+    LLM translation). ``languages_per_date`` is optional; when omitted
+    we render only the Chinese column (backward-compatible with
+    pre-v0.8 publish runs).
     """
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = [
@@ -532,6 +576,7 @@ def _render_index_md(dated_briefs: list[str]) -> str:
         "",
         "> Daily, deterministic research brief over China-equity alt-data, ",
         "> synthesized from 6 quant projects. Updated every trading day at 17:00 (UTC+8).",
+        "> 中文为权威版本，English 为 LLM 翻译（保留事实，标注 source hash）。",
         "",
         f"_Last regenerated: {now}_",
         "",
@@ -540,20 +585,43 @@ def _render_index_md(dated_briefs: list[str]) -> str:
         "",
         "## 简报列表 / Briefs archive",
         "",
-        "| 日期 / Date | 简报 / Brief |",
-        "|---|---|",
+        "| 日期 / Date | 中文 / Chinese | English |",
+        "|---|---|---|",
     ]
     if not dated_briefs:
-        lines.append("| _(暂无 / none yet)_ | — |")
+        lines.append("| _(暂无 / none yet)_ | — | — |")
     else:
         for stem in dated_briefs:
-            lines.append(f"| {stem} | [{stem}.md](briefs/{stem}.md) |")
+            langs = (languages_per_date or {}).get(stem, [])
+            cn_cell = f"[{stem}.md](briefs/{stem}.md)"
+            if "en" in langs:
+                en_cell = f"[{stem}.en.md](briefs/{stem}.en.md)"
+            else:
+                en_cell = "—"
+            lines.append(f"| {stem} | {cn_cell} | {en_cell} |")
     lines.append("")
     lines.append("---")
     lines.append("")
     lines.append("Generated by [`cn-altdata-brief`](https://github.com/Leonard-Don/cn-altdata-brief) · MIT")
     lines.append("")
     return "\n".join(lines)
+
+
+def _detect_languages_for(briefs_root: Path, date_stem: str) -> list[str]:
+    """Return ISO codes for which ``<date_stem>.<lang>.md`` exists in ``briefs_root``.
+
+    Stable alpha order — used by the index renderer to decide whether
+    the EN column is a link or an em-dash.
+    """
+    if not briefs_root.exists():
+        return []
+    codes: list[str] = []
+    for p in briefs_root.glob(f"{date_stem}.*.md"):
+        # stem is "2026-05-17.en" -> language code is "en"
+        parts = p.stem.split(".")
+        if len(parts) >= 2:
+            codes.append(parts[-1].lower())
+    return sorted(set(codes))
 
 
 def default_template_dir() -> Path:

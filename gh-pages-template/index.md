@@ -7,11 +7,16 @@ title: CN AltData Brief
 
 > Daily, deterministic research brief over China-equity alt-data,
 > synthesized from 6 quant projects. Updated every trading day at 17:00 (UTC+8).
+> 中文为权威版本，English 为 LLM 翻译（保留事实，标注 source hash）。
 
 [RSS feed](feed.xml) ·
 [Source code](https://github.com/Leonard-Don/cn-altdata-brief)
 
 ## 简报列表 / Briefs archive
+
+| 日期 / Date | 中文 / Chinese | English |
+|---|---|---|
+| _(暂无 / none yet)_ | — | — |
 
 _This template is replaced on every publish — the live archive is
 written by the Python publisher with all dated briefs sorted newest-first._

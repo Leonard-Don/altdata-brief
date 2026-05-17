@@ -3,6 +3,12 @@
 The feed publishes one ``<item>`` per generated brief, capped to the
 most-recent ``MAX_ITEMS`` so the file does not grow unbounded across
 years of daily output. Std-lib only — no external feed-builder dep.
+
+v0.8: bilingual support. Each date that has both a CN brief
+(``YYYY-MM-DD.md``) and an EN brief (``YYYY-MM-DD.en.md``) yields
+**two** ``<item>`` elements — the EN one is title-prefixed ``[EN]`` and
+points at ``YYYY-MM-DD.en.html``. Subscribers can filter by GUID
+suffix (``:en``) if they only want one language.
 """
 
 from __future__ import annotations
@@ -17,6 +23,8 @@ CHANNEL_TITLE = "CN AltData Brief"
 CHANNEL_DESCRIPTION = (
     "Daily research brief synthesizing alt-data signals from a portfolio of 6 quant projects."
 )
+# Channel-level language stays zh-CN because Chinese is the ground
+# truth; per-item ``<language>`` elements override for EN entries.
 CHANNEL_LANGUAGE = "zh-CN"
 GENERATOR = "cn-altdata-brief RSS module"
 
@@ -26,6 +34,13 @@ MAX_ITEMS = 50
 _TOP_HEADLINE_RE = re.compile(
     r"^- \*\*(?P<name>[^*]+)\*\*[^\n]*",
     flags=re.MULTILINE,
+)
+
+# Suffix → (item_language, title_prefix, description_fallback). Order
+# matters: CN first so it occupies the more prominent slot per date.
+_LANGUAGE_VARIANTS: tuple[tuple[str, str, str, str], ...] = (
+    ("", "zh-CN", "", ""),
+    (".en", "en", "[EN] ", "English translation — see Chinese version for ground truth."),
 )
 
 
@@ -60,12 +75,20 @@ def render_feed(
     for item in items:
         item_el = ET.SubElement(channel, "item")
         ET.SubElement(item_el, "title").text = item["title"]
-        ET.SubElement(item_el, "link").text = f"{site_url.rstrip('/')}/briefs/{item['date']}.html"
+        suffix = item.get("file_suffix", "")
+        ET.SubElement(item_el, "link").text = (
+            f"{site_url.rstrip('/')}/briefs/{item['date']}{suffix}.html"
+        )
+        guid_lang = item.get("guid_lang") or ""
+        guid_tail = f":{guid_lang}" if guid_lang else ""
         ET.SubElement(item_el, "guid", attrib={"isPermaLink": "false"}).text = (
-            f"cn-altdata-brief:{item['date']}"
+            f"cn-altdata-brief:{item['date']}{guid_tail}"
         )
         ET.SubElement(item_el, "pubDate").text = item["pub_date"]
         ET.SubElement(item_el, "description").text = item["description"]
+        # Per-item language overrides the channel-level zh-CN default
+        # so feed readers can filter on RFC 5646 language tags.
+        ET.SubElement(item_el, "language").text = item.get("language", CHANNEL_LANGUAGE)
 
     ET.indent(rss, space="  ", level=0)  # human-readable pretty-print
     xml_bytes = ET.tostring(rss, encoding="utf-8", xml_declaration=True)
@@ -77,29 +100,67 @@ def render_feed(
 
 
 def _collect_items(briefs_dir: Path) -> list[dict[str, str]]:
-    """Return brief descriptors sorted newest first."""
+    """Return brief descriptors sorted newest first.
+
+    Iterates dated CN briefs first, then for each date appends the
+    matching ``.en.md`` (and any future language siblings) so feed
+    items are grouped per-date but always lead with the CN ground
+    truth.
+    """
     if not briefs_dir.exists():
         return []
-    rows: list[tuple[str, Path]] = []
+    cn_dates: list[str] = []
     for path in briefs_dir.glob("*.md"):
         stem = path.stem
+        if "." in stem:  # skip 2026-05-17.en — we'll find them via the date
+            continue
         if not _looks_like_date(stem):
             continue
-        rows.append((stem, path))
-    rows.sort(reverse=True)
-    return [_build_item(stem, path) for stem, path in rows]
+        cn_dates.append(stem)
+    cn_dates.sort(reverse=True)
+
+    items: list[dict[str, str]] = []
+    for date_str in cn_dates:
+        for suffix, lang, title_prefix, desc_fallback in _LANGUAGE_VARIANTS:
+            candidate = briefs_dir / f"{date_str}{suffix}.md"
+            if not candidate.exists():
+                continue
+            items.append(
+                _build_item(
+                    date_str,
+                    candidate,
+                    file_suffix=suffix,
+                    language=lang,
+                    title_prefix=title_prefix,
+                    description_fallback=desc_fallback,
+                )
+            )
+    return items
 
 
-def _build_item(date_str: str, path: Path) -> dict[str, str]:
+def _build_item(
+    date_str: str,
+    path: Path,
+    *,
+    file_suffix: str = "",
+    language: str = CHANNEL_LANGUAGE,
+    title_prefix: str = "",
+    description_fallback: str = "",
+) -> dict[str, str]:
     text = path.read_text(encoding="utf-8")
     headline = _extract_top_headline(text)
-    description = _extract_first_paragraph(text)
-    title = f"{date_str} · {headline}" if headline else date_str
+    description = _extract_first_paragraph(text) or description_fallback
+    base_title = f"{date_str} · {headline}" if headline else date_str
+    title = f"{title_prefix}{base_title}"
+    guid_lang = language.split("-")[0] if language and language != CHANNEL_LANGUAGE else ""
     return {
         "date": date_str,
         "title": title,
         "pub_date": _date_to_rfc822(date_str),
         "description": description,
+        "file_suffix": file_suffix,
+        "language": language,
+        "guid_lang": guid_lang,
     }
 
 

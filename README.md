@@ -3,7 +3,8 @@
 [![CI](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml/badge.svg)](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Version](https://img.shields.io/badge/version-v0.6.0-1f6feb)
+![Version](https://img.shields.io/badge/version-v0.8.0-1f6feb)
+![Languages](https://img.shields.io/badge/languages-CN%20%2B%20EN-2da44e)
 ![Sources](https://img.shields.io/badge/sources-4%2F4%20public-2da44e)
 ![Cadence](https://img.shields.io/badge/cadence-T%2B0%20daily-2da44e)
 ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-%F0%9F%9F%A2%20ready-2da44e)
@@ -137,6 +138,27 @@ uv run cn-altdata-brief llm-usage
 - 原始规则化版本会保留在简报折叠区；front matter 记录 `llm_requested`、`llm_rephrase_used`、`llm_status` 与原文 hash。
 - 改写文本必须保留原始数字和行业/品种名；校验不通过就发布 deterministic 原文。
 - 本项目输出仅供研究与教学讨论，不构成投资建议；LLM 改写不会改变这个边界。
+
+### 双语版本 / Bilingual EN translation (v0.8)
+
+从 v0.8 起，可以让 Claude 把当日中文简报翻成自然的专业英文，输出额外的 `output/briefs/YYYY-MM-DD.en.md` 文件——中文仍是 ground truth，英文是 LLM 翻译，供海外读者订阅。
+
+```bash
+uv sync --extra llm
+export ANTHROPIC_API_KEY=...
+uv run cn-altdata-brief generate --with-llm --languages CN,EN
+```
+
+边界：
+
+- **中文永远是 ground truth**——英文版本是加法（additive）侧通道，不会影响默认 CN 输出。
+- 翻译时数字（百分比、价格、日期）必须 1:1 保留；行业名按 `src/cn_altdata_brief/llm/industry_mapping.json` 的中英对照（如 `新能源汽车 → EV / new energy vehicles`、`电网 → power grid`、`有色金属ETF南方 → ChinaAMC SSE Non-Ferrous Metals ETF`）。
+- 校验未通过、或 SDK / API key 缺失、或网络失败时，`.en.md` 仍会写盘，但内容是带 banner 的 CN 兜底——`translation_status: validation_failed | api_key_missing | sdk_missing` 标在 frontmatter。
+- 单日双语成本：~1500 input + ~1000 output tokens ≈ $0.02（claude-3-5-sonnet 价格，2026 年报价）；按交易日全年 ≈ $5。
+- RSS 每个日期会有 2 条 item：`[EN] ...` 前缀 + `:en` GUID 后缀；订阅端可按语言过滤。
+- GitHub Pages 首页表格新增 `English` 列。
+
+> The English translation is LLM-produced; the Chinese version is the authoritative source. Numbers (percentages, currency amounts, dates) are preserved exactly. Industry terms follow the curated CN→EN glossary at `src/cn_altdata_brief/llm/industry_mapping.json`. If translation fails for any reason, the EN file still appears at the same URL with a banner explaining the fallback so subscribers never hit a 404.
 
 ### 数据源解析顺序 / Source resolution
 
