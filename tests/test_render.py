@@ -12,7 +12,12 @@ from cn_altdata_brief.adapters import (
     QuantTradingAdapter,
     SuperPricingAdapter,
 )
-from cn_altdata_brief.render import render_all_charts, render_brief_markdown, render_site_index
+from cn_altdata_brief.render import (
+    render_all_charts,
+    render_brief_markdown,
+    render_feed,
+    render_site_index,
+)
 from cn_altdata_brief.synthesis import (
     synthesize_etf_flow,
     synthesize_industry,
@@ -136,6 +141,23 @@ def test_render_site_index_with_briefs(tmp_path: Path) -> None:
     idx_17 = text.index("2026-05-17.md")
     idx_16 = text.index("2026-05-16.md")
     assert idx_17 < idx_16
+
+
+def test_render_feed_with_briefs(tmp_path: Path) -> None:
+    (tmp_path / "2026-05-17.md").write_text(
+        "# CN AltData Brief — 2026-05-17\n\n- **新能源汽车**：daily summary\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "2026-05-16.md").write_text("# older", encoding="utf-8")
+    feed = render_feed(
+        briefs_dir=tmp_path,
+        feed_path=tmp_path / "feed.xml",
+        site_url="https://example.com/cn-altdata-brief",
+    )
+    text = feed.read_text(encoding="utf-8")
+    assert "<rss version=\"2.0\"" in text
+    assert "https://example.com/cn-altdata-brief/briefs/2026-05-17.html" in text
+    assert "daily summary" in text
 
 
 def test_render_strict_undefined_catches_missing_keys(tmp_path: Path) -> None:

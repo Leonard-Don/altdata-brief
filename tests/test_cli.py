@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
+from cn_altdata_brief import validate as validate_mod
 from cn_altdata_brief.adapters import (
     etf_512400 as etf_mod,
 )
@@ -70,6 +72,7 @@ def test_cli_generate_writes_brief(
     out = capsys.readouterr().out
     assert "OK" in out
     assert "5/5 sections available" in out
+    assert (tmp_path / "feed.xml").exists()
 
 
 def test_cli_generate_no_charts_flag(
@@ -86,6 +89,7 @@ def test_cli_generate_no_charts_flag(
             str(tmp_path / "c"),
             "--no-charts",
             "--no-index",
+            "--no-feed",
         ]
     )
     assert code == 0
@@ -95,6 +99,20 @@ def test_cli_generate_no_charts_flag(
     )
     # no index.md when --no-index
     assert not (tmp_path / "b" / "index.md").exists()
+    assert not (tmp_path / "feed.xml").exists()
+
+
+def test_cli_validate_json_success(
+    patched_default_paths: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(validate_mod, "MAX_ETF_SNAPSHOT_AGE_DAYS", 9999)
+    code = main(["validate", "--json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["exit_code"] == 0
+    assert len(payload["checks"]) == 4
 
 
 def test_cli_help_works(capsys: pytest.CaptureFixture[str]) -> None:

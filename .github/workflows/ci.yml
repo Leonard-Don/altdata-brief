@@ -26,6 +26,11 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Install CJK fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
+
       - name: uv sync
         run: uv sync --extra dev
 

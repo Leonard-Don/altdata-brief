@@ -1,0 +1,169 @@
+"""Tests for the ``validate`` subcommand and its check predicates."""
+
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import pytest
+
+from cn_altdata_brief import validate as validate_mod
+from cn_altdata_brief.adapters import (
+    ETF512400Adapter,
+    IndexResearchAdapter,
+    QuantTradingAdapter,
+    SuperPricingAdapter,
+)
+from cn_altdata_brief.adapters.base import AdapterPayload
+from cn_altdata_brief.cli import main
+from cn_altdata_brief.validate import (
+    EXIT_FAIL,
+    EXIT_OK,
+    EXIT_WARN,
+    FAIL,
+    INFO,
+    WARN,
+    CheckResult,
+    run_all_checks,
+    summarize,
+)
+
+# -- helpers ------------------------------------------------------------
+
+
+@pytest.fixture
+def all_payloads(
+    super_pricing_cache: Path,
+    quant_trading_cache: Path,
+    index_research_tables: Path,
+    etf_512400_snapshot: Path,
+) -> dict[str, AdapterPayload | None]:
+    return {
+        "super_pricing": SuperPricingAdapter(cache_dir=super_pricing_cache).fetch(),
+        "quant_trading": QuantTradingAdapter(cache_dir=quant_trading_cache).fetch(),
+        "index_research": IndexResearchAdapter(
+            table_dir=index_research_tables, figure_dir=index_research_tables
+        ).fetch(),
+        "etf_512400": ETF512400Adapter(snapshot_path=etf_512400_snapshot).fetch(),
+    }
+
+
+@pytest.fixture
+def patched_default_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    super_pricing_cache: Path,
+    quant_trading_cache: Path,
+    index_research_tables: Path,
+    etf_512400_snapshot: Path,
+) -> None:
+    from cn_altdata_brief.adapters import etf_512400 as etf_mod
+    from cn_altdata_brief.adapters import index_research as ix_mod
+    from cn_altdata_brief.adapters import quant_trading as qt_mod
+    from cn_altdata_brief.adapters import super_pricing as sp_mod
+
+    monkeypatch.setattr(sp_mod, "DEFAULT_CACHE_DIR", super_pricing_cache)
+    monkeypatch.setattr(qt_mod, "DEFAULT_CACHE_DIR", quant_trading_cache)
+    monkeypatch.setattr(ix_mod, "DEFAULT_TABLE_DIR", index_research_tables)
+    monkeypatch.setattr(ix_mod, "DEFAULT_FIGURE_DIR", index_research_tables)
+    monkeypatch.setattr(etf_mod, "DEFAULT_SNAPSHOT", etf_512400_snapshot)
+
+
+# -- individual check predicates ---------------------------------------
+
+
+def test_all_fixture_checks_pass_or_warn(all_payloads) -> None:
+    assert validate_mod._check_policy_industries(all_payloads["super_pricing"]).level == INFO
+    assert validate_mod._check_macro_metals(all_payloads["super_pricing"]).level == INFO
+    assert validate_mod._check_verdict_completeness(all_payloads["index_research"]).level == INFO
+
+
+def test_missing_payloads_fail() -> None:
+    assert validate_mod._check_policy_industries(None).level == FAIL
+    assert validate_mod._check_macro_metals(None).level == FAIL
+    assert validate_mod._check_etf_snapshot_age(None).level == FAIL
+    assert validate_mod._check_verdict_completeness(None).level == FAIL
+
+
+def _payload(data: dict) -> AdapterPayload:
+    return AdapterPayload(source="x", fetched_at="t", cache_path=None, live=False, data=data)
+
+
+def test_synthetic_failure_modes() -> None:
+    too_few_industries = _payload(
+        {"policy_radar": {"industry_signals": [
+            {"industry": "A", "mentions": 5, "avg_impact": 0.1, "signal": "x"},
+            {"industry": "B", "mentions": 0, "avg_impact": 0.0, "signal": "x"},
+        ]}}
+    )
+    assert validate_mod._check_policy_industries(too_few_industries).level == FAIL
+
+    nan_metals = _payload(
+        {"macro_hf": {"metals": [
+            {"name_cn": "铜", "price_change_pct": float("nan")},
+            {"name_cn": "铝", "price_change_pct": None},
+        ]}}
+    )
+    assert validate_mod._check_macro_metals(nan_metals).level == FAIL
+
+    too_few_verdicts = _payload({"verdicts": [{"hid": "H1"}, {"hid": "H2"}]})
+    assert validate_mod._check_verdict_completeness(too_few_verdicts).level == FAIL
+
+
+def test_etf_snapshot_age_buckets() -> None:
+    def _etf(trade_date: str | None) -> AdapterPayload:
+        return _payload({"trade_date": trade_date, "nav": {}, "generated_at": None})
+
+    today = datetime.now(UTC).date()
+    assert validate_mod._check_etf_snapshot_age(_etf(today.isoformat())).level == INFO
+    assert validate_mod._check_etf_snapshot_age(_etf((today - timedelta(days=10)).isoformat())).level == WARN
+    assert validate_mod._check_etf_snapshot_age(_etf("not-a-date")).level == WARN
+
+
+# -- summarize ---------------------------------------------------------
+
+
+def test_summarize_exit_codes() -> None:
+    assert summarize([CheckResult("a", INFO, "ok")]) == EXIT_OK
+    assert summarize([CheckResult("a", WARN, "meh")]) == EXIT_WARN
+    assert summarize([CheckResult("a", WARN, "meh")], fail_on_warn=True) == EXIT_FAIL
+    assert summarize([CheckResult("a", FAIL, "bad"), CheckResult("b", WARN, "meh")]) == EXIT_FAIL
+
+
+# -- run_all_checks + CLI integration ----------------------------------
+
+
+def test_run_all_checks_against_fixtures(all_payloads) -> None:
+    results = run_all_checks(all_payloads)
+    assert len(results) == 4
+    assert all(r.level in (INFO, WARN, FAIL) for r in results)
+
+
+def test_cli_validate_human_output(
+    patched_default_paths: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = main(["validate"])
+    out = capsys.readouterr().out
+    assert "policy_radar.industries_with_mentions" in out
+    assert "macro_hf.metals_with_weekly_change" in out
+    assert "etf_512400.snapshot_age" in out
+    assert "index_research.verdict_completeness" in out
+    assert code in (EXIT_OK, EXIT_WARN)
+
+
+def test_cli_validate_json_output(
+    patched_default_paths: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = main(["validate", "--json"])
+    parsed = json.loads(capsys.readouterr().out)
+    assert len(parsed["checks"]) == 4
+    assert parsed["exit_code"] == code
+
+
+def test_cli_validate_fail_on_warn_escalates(patched_default_paths: None) -> None:
+    code_plain = main(["validate"])
+    code_strict = main(["validate", "--fail-on-warn"])
+    if code_plain == EXIT_WARN:
+        assert code_strict == EXIT_FAIL
+    else:
+        assert code_strict in (EXIT_OK, EXIT_FAIL)

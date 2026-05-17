@@ -1,0 +1,316 @@
+"""Data-quality preconditions check, doctor-style.
+
+Run via ``cn-altdata-brief validate``. The intent is to short-circuit
+the daily pipeline BEFORE publishing a brief that would be empty,
+stale, or misleading.
+
+The checks are deliberately conservative — they should pass on a
+healthy day and fail loudly when something is structurally wrong
+upstream (cache stale, file missing, all-zero signals).
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
+from typing import Any
+
+from cn_altdata_brief.adapters.base import AdapterPayload, AdapterUnavailable
+
+# Severity levels --------------------------------------------------------
+INFO = "info"
+WARN = "warn"
+FAIL = "fail"
+
+# Exit codes (mirror index-inclusion's doctor convention).
+EXIT_OK = 0
+EXIT_WARN = 1
+EXIT_FAIL = 2
+
+# Tunable thresholds — surface them as module-level constants so the
+# upstream operator can monkeypatch in tests and lift them via env vars
+# in a future revision without spelunking through the check fns.
+MIN_POLICY_INDUSTRIES = 3
+MIN_MACRO_METALS = 2
+MAX_ETF_SNAPSHOT_AGE_DAYS = 7
+REQUIRED_HYPOTHESIS_COUNT = 7
+
+
+@dataclass(slots=True)
+class CheckResult:
+    """One precondition's verdict.
+
+    The serialized form intentionally mirrors index-inclusion's
+    ``doctor`` JSON so a unified dashboard can later consume both.
+    """
+
+    name: str
+    level: str  # "info" | "warn" | "fail"
+    message: str
+    detail: dict[str, Any] | None = None
+
+    def to_line(self) -> str:
+        symbol = {INFO: "OK  ", WARN: "WARN", FAIL: "FAIL"}.get(self.level, "????")
+        return f"[{symbol}] {self.name}: {self.message}"
+
+
+# ----------------------------------------------------------------------
+
+
+def run_all_checks(payloads: dict[str, AdapterPayload | None]) -> list[CheckResult]:
+    """Apply all data-quality predicates against the loaded payloads.
+
+    The same payload dict the CLI feeds into ``_synthesize`` is reused
+    here — keep validate cheap and idempotent.
+    """
+    results: list[CheckResult] = []
+    results.append(_check_policy_industries(payloads.get("super_pricing")))
+    results.append(_check_macro_metals(payloads.get("super_pricing")))
+    results.append(_check_etf_snapshot_age(payloads.get("etf_512400")))
+    results.append(_check_verdict_completeness(payloads.get("index_research")))
+    return results
+
+
+def summarize(results: list[CheckResult], *, fail_on_warn: bool = False) -> int:
+    """Reduce a list of CheckResults to an exit code.
+
+    ``fail_on_warn=True`` upgrades any WARN to a non-zero exit (used by CI).
+    Without it, WARN exits with code 1 and only FAIL escalates to 2.
+    """
+    has_fail = any(r.level == FAIL for r in results)
+    has_warn = any(r.level == WARN for r in results)
+    if has_fail:
+        return EXIT_FAIL
+    if has_warn:
+        return EXIT_FAIL if fail_on_warn else EXIT_WARN
+    return EXIT_OK
+
+
+# -- individual checks --------------------------------------------------
+
+
+def _check_policy_industries(payload: AdapterPayload | None) -> CheckResult:
+    name = "policy_radar.industries_with_mentions"
+    if payload is None:
+        return CheckResult(
+            name=name,
+            level=FAIL,
+            message="super-pricing adapter returned no payload (cache missing or unreadable).",
+        )
+    policy = (payload.data.get("policy_radar") or {}).get("industry_signals") or []
+    with_mentions = [row for row in policy if int(row.get("mentions", 0) or 0) > 0]
+    detail: dict[str, Any] = {
+        "min_required": MIN_POLICY_INDUSTRIES,
+        "actual": len(with_mentions),
+        "industries": [r.get("industry") for r in with_mentions[:5]],
+    }
+    if len(with_mentions) < MIN_POLICY_INDUSTRIES:
+        return CheckResult(
+            name=name,
+            level=FAIL,
+            message=(
+                f"only {len(with_mentions)} industries with mentions "
+                f"(need ≥{MIN_POLICY_INDUSTRIES}); brief would publish empty."
+            ),
+            detail=detail,
+        )
+    return CheckResult(
+        name=name,
+        level=INFO,
+        message=f"{len(with_mentions)} industries carry policy mentions.",
+        detail=detail,
+    )
+
+
+def _check_macro_metals(payload: AdapterPayload | None) -> CheckResult:
+    name = "macro_hf.metals_with_weekly_change"
+    if payload is None:
+        return CheckResult(
+            name=name,
+            level=FAIL,
+            message="super-pricing adapter returned no payload (macro_hf cache missing).",
+        )
+    metals = (payload.data.get("macro_hf") or {}).get("metals") or []
+    valid = [
+        m
+        for m in metals
+        if m.get("price_change_pct") is not None
+        and not _is_nan(m.get("price_change_pct"))
+    ]
+    detail = {
+        "min_required": MIN_MACRO_METALS,
+        "actual": len(valid),
+        "metals": [m.get("name_cn") for m in valid],
+    }
+    if len(valid) < MIN_MACRO_METALS:
+        return CheckResult(
+            name=name,
+            level=FAIL,
+            message=(
+                f"only {len(valid)} metals with usable weekly_change_pct "
+                f"(need ≥{MIN_MACRO_METALS})."
+            ),
+            detail=detail,
+        )
+    return CheckResult(
+        name=name,
+        level=INFO,
+        message=f"{len(valid)} metals carry weekly_change_pct data.",
+        detail=detail,
+    )
+
+
+def _check_etf_snapshot_age(payload: AdapterPayload | None) -> CheckResult:
+    name = "etf_512400.snapshot_age"
+    if payload is None:
+        return CheckResult(
+            name=name,
+            level=FAIL,
+            message="ETF 512400 snapshot missing; run `npm run refresh` upstream.",
+        )
+    trade_date_raw = (
+        payload.data.get("trade_date")
+        or (payload.data.get("nav") or {}).get("date")
+        or payload.data.get("generated_at")
+    )
+    trade_dt = _parse_date(trade_date_raw)
+    if trade_dt is None:
+        return CheckResult(
+            name=name,
+            level=WARN,
+            message=f"could not parse snapshot date (raw={trade_date_raw!r}).",
+            detail={"raw": trade_date_raw},
+        )
+    today = datetime.now(UTC).date()
+    age = (today - trade_dt).days
+    detail = {
+        "trade_date": trade_dt.isoformat(),
+        "today_utc": today.isoformat(),
+        "age_days": age,
+        "max_allowed": MAX_ETF_SNAPSHOT_AGE_DAYS,
+    }
+    if age > MAX_ETF_SNAPSHOT_AGE_DAYS:
+        return CheckResult(
+            name=name,
+            level=WARN,
+            message=f"ETF snapshot is {age} days old (max {MAX_ETF_SNAPSHOT_AGE_DAYS}); consider refreshing.",
+            detail=detail,
+        )
+    return CheckResult(
+        name=name,
+        level=INFO,
+        message=f"ETF snapshot fresh ({age}d old, max {MAX_ETF_SNAPSHOT_AGE_DAYS}).",
+        detail=detail,
+    )
+
+
+def _check_verdict_completeness(payload: AdapterPayload | None) -> CheckResult:
+    name = "index_research.verdict_completeness"
+    if payload is None:
+        return CheckResult(
+            name=name,
+            level=FAIL,
+            message="index-inclusion-research adapter returned no payload (CSV missing).",
+        )
+    verdicts = payload.data.get("verdicts") or []
+    actual = len(verdicts)
+    detail = {
+        "required": REQUIRED_HYPOTHESIS_COUNT,
+        "actual": actual,
+        "hypothesis_ids": [v.get("hid") for v in verdicts],
+    }
+    if actual < REQUIRED_HYPOTHESIS_COUNT:
+        return CheckResult(
+            name=name,
+            level=FAIL,
+            message=(
+                f"only {actual}/{REQUIRED_HYPOTHESIS_COUNT} hypothesis verdicts present; "
+                "verdicts CSV is incomplete."
+            ),
+            detail=detail,
+        )
+    if actual > REQUIRED_HYPOTHESIS_COUNT:
+        # More than 7 isn't a hard fail (the research project might add H8) but
+        # the brief's narrative was tuned for exactly 7 — flag as a soft warn.
+        return CheckResult(
+            name=name,
+            level=WARN,
+            message=f"{actual} hypothesis verdicts present (expected exactly {REQUIRED_HYPOTHESIS_COUNT}); narrative tuning may need refresh.",
+            detail=detail,
+        )
+    return CheckResult(
+        name=name,
+        level=INFO,
+        message=f"all {REQUIRED_HYPOTHESIS_COUNT} hypothesis verdicts present.",
+        detail=detail,
+    )
+
+
+# -- shared helpers -----------------------------------------------------
+
+
+def _is_nan(value: Any) -> bool:
+    try:
+        return math.isnan(float(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _parse_date(raw: Any) -> date | None:
+    """Parse YYYY-MM-DD or ISO-8601 timestamps into a ``date``."""
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    # First, try plain date.
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    # Fall back to ISO-8601 (with or without trailing Z).
+    try:
+        normalized = text.replace("Z", "+00:00")
+        return datetime.fromisoformat(normalized).date()
+    except ValueError:
+        return None
+
+
+def load_payloads_for_validate() -> dict[str, AdapterPayload | None]:
+    """Build the same payload dict the generate command uses.
+
+    Kept here (rather than in cli.py) so that ``run_all_checks`` can be
+    exercised directly from tests with monkeypatched paths.
+    """
+    from cn_altdata_brief.adapters import build_default_adapters
+
+    payloads: dict[str, AdapterPayload | None] = {}
+    for name, adapter in build_default_adapters().items():
+        try:
+            payloads[name] = adapter.fetch()
+        except AdapterUnavailable:
+            payloads[name] = None
+    return payloads
+
+
+# Re-export for convenience tests.
+__all__ = [
+    "CheckResult",
+    "EXIT_FAIL",
+    "EXIT_OK",
+    "EXIT_WARN",
+    "FAIL",
+    "INFO",
+    "MAX_ETF_SNAPSHOT_AGE_DAYS",
+    "MIN_MACRO_METALS",
+    "MIN_POLICY_INDUSTRIES",
+    "REQUIRED_HYPOTHESIS_COUNT",
+    "WARN",
+    "load_payloads_for_validate",
+    "run_all_checks",
+    "summarize",
+]
+
+

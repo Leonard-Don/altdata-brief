@@ -7,9 +7,10 @@
 - 目标 KPI：每周日报阅读人次 ≥ 200，订阅 ≥ 30
 - 反馈循环：每 5 期回看一次 PostHog / Substack analytics，调整段落长度与图表
 
-## Phase 2 (Day 31-60) · 引入 LLM 改写 + 周度纵深
+## Phase 2 (Day 31-60) · 引入叙事增强 + 周度纵深
 
-- v0.2 上线：用 LLM 把「本日观察」段从 rule-based 转 narrative，但保留 rule-based 作 ground truth
+- v0.2 已上线：先用确定性模板把「本日观察」改成 framing / context / follow-up，并加入 validate + RSS
+- v0.3 再评估是否用 LLM 改写 observation；rule-based 输出继续作为 ground truth
 - 启动 **Weekly Deep-Dive** ¥39/月：每周一篇行业纵深 + 敏感性分析 + chart pack
 - 目标 KPI：付费转化率 ≥ 3%（30 订阅 → ≥1 付费），写够 4 篇 Weekly
 
@@ -30,5 +31,5 @@
 ## 风险与缓解
 
 - **数据合规**：所有数据均来自公开 API + 自建 alt-data，简报每段附 source label，无未授权第三方数据。
-- **可持续性**：v0.1 完全 deterministic、零外部依赖（除 matplotlib + Jinja2），单人运行成本接近 0。
+- **可持续性**：v0.2 仍完全 deterministic，单人运行成本接近 0。
 - **冷启动**：靠 6 个项目的 README 互链 + Boss/Upwork 简介挂展示链接，先到 200 读者再谈付费。
