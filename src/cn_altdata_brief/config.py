@@ -14,7 +14,9 @@ Each adapter has THREE possible data sources, in priority order:
    maintainer's filesystem. Used as the final fallback so local
    development keeps working unchanged.
 
-The mode is controlled by ``PUBLIC_SUMMARY_PREFERENCE``:
+The mode is controlled by ``CN_ALTDATA_BRIEF_PREFERENCE``. For compatibility
+with public-summary fixture workflows, ``PUBLIC_SUMMARY_PREFERENCE`` is also
+honored as an alias when ``CN_ALTDATA_BRIEF_PREFERENCE`` is unset:
 
 * ``"auto"`` (default) — try (1), then (2), then (3); take whichever
   succeeds first.
@@ -148,9 +150,13 @@ def load_source_config(
     """Build a ``SourceConfig`` from explicit args + environment variables.
 
     Explicit ``preference`` overrides ``CN_ALTDATA_BRIEF_PREFERENCE``;
+    ``CN_ALTDATA_BRIEF_PREFERENCE`` overrides the documented alias
+    ``PUBLIC_SUMMARY_PREFERENCE``;
     explicit ``allow_live`` overrides ``CN_ALTDATA_BRIEF_LIVE``.
     """
-    pref = _normalize_preference(preference or os.environ.get("CN_ALTDATA_BRIEF_PREFERENCE"))
+    env_preference = os.environ.get("CN_ALTDATA_BRIEF_PREFERENCE")
+    alias_preference = os.environ.get("PUBLIC_SUMMARY_PREFERENCE")
+    pref = _normalize_preference(preference or env_preference or alias_preference)
     if allow_live is None:
         allow_live = os.environ.get("CN_ALTDATA_BRIEF_LIVE", "0") == "1"
     return SourceConfig(

@@ -470,6 +470,25 @@ class TestSourceConfigEnv:
         assert cfg.public_required is True
         assert cfg.allow_cache is False
 
+    def test_public_summary_preference_alias_drives_preference(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PUBLIC_SUMMARY_PREFERENCE", "public_only")
+        cfg = load_source_config()
+        assert cfg.preference == "public_only"
+        assert cfg.public_required is True
+        assert cfg.allow_cache is False
+
+    def test_cn_preference_overrides_public_summary_alias(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PUBLIC_SUMMARY_PREFERENCE", "public_only")
+        monkeypatch.setenv("CN_ALTDATA_BRIEF_PREFERENCE", "cache_only")
+        cfg = load_source_config()
+        assert cfg.preference == "cache_only"
+        assert cfg.allow_cache is True
+        assert cfg.public_required is False
+
     def test_explicit_preference_overrides_env(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
