@@ -1,0 +1,122 @@
+---
+kind: weekly-digest
+iso_year: {{ iso_year }}
+week_number: {{ week_number }}
+week_start: {{ week_start }}
+week_end: {{ week_end }}
+generated_at: {{ fetched_at }}
+brief_count: {{ brief_count }}
+themes_count: {{ themes|length }}
+inflections_count: {{ inflections|length }}
+---
+
+# 本周回顾 W{{ '%02d'|format(week_number) }} — {{ week_start }} → {{ week_end }}
+
+> 由 `cn-altdata-brief` 在 {{ fetched_at }} 自动生成，聚合本周 {{ brief_count }}/5 份每日简报。
+> 本文件为周度回顾（deterministic synthesis），不包含 LLM 改写。
+
+---
+
+## 本周核心信号
+
+{% for line in top_signals %}
+- {{ line }}
+{% endfor %}
+
+{% if etf_weekly_cumulative_pct is not none %}
+> ETF 512400 周累计 NAV 变动 `{{ '%+0.2f'|format(etf_weekly_cumulative_pct) }}%`
+{% endif %}
+
+---
+
+## 1. 本周核心主题
+
+> 阈值：在 ≥3 个交易日重复出现的行业 / 金属。
+
+{% if themes %}
+{% for t in themes %}
+- **{{ t.name }}**（{{ '政策' if t.kind == 'policy' else '库存' }}） — 出现 {{ t.occurrence_days }}/5 天 · 累计 `{{ '%+0.3f'|format(t.cumulative_impact) }}` · 末态={{ t.label_hint or '—' }}
+  - 每日值：{% for day, value in t.per_day %}{{ day }}={{ '%+0.3f'|format(value) if value is not none else '—' }}{% if not loop.last %} · {% endif %}{% endfor %}
+
+{% endfor %}
+{% else %}
+- _本周未达到主题阈值的行业 / 金属。_
+{% endif %}
+
+---
+
+## 2. 信号反转
+
+> 标准：(行业 / 金属, 信号类型) 的数值正负号在本周内出现至少 1 次反转。
+
+{% if inflections %}
+{% for f in inflections %}
+- **{{ f.name }}**（{{ '政策' if f.kind == 'policy' else '库存' }}） — 由 `{{ f.flipped_from }}` 转为 `{{ f.flipped_to }}` · flip dates={{ f.flip_dates|join(' → ') }}
+{% endfor %}
+{% else %}
+- _本周未观察到信号反转。_
+{% endif %}
+
+---
+
+## 3. 行业累计影响
+
+> 全部出现过的行业按 |累计 avg_impact| 排序（top 8）。
+
+{% if cumulative_policy_impact %}
+{% for row in cumulative_policy_impact[:8] %}
+- **{{ row.industry }}**：累计 avg_impact = `{{ '%+0.3f'|format(row.cumulative) }}`
+{% endfor %}
+{% else %}
+- _本周无政策信号样本。_
+{% endif %}
+
+---
+
+## 4. ETF 资金流摘要
+
+{% if etf_weekly_cumulative_pct is not none %}
+- 本周 ETF 512400 日收益累计：`{{ '%+0.2f'|format(etf_weekly_cumulative_pct) }}%`
+- 每日 NAV 变动逐日：
+{% for b in briefs_aggregated %}
+  - `{{ b.date }}`: {{ '%+0.2f'|format(b.etf_daily_pct) ~ '%' if b.etf_daily_pct is not none else '—' }}
+{% endfor %}
+{% else %}
+- _本周 ETF 512400 NAV 数据缺失，无法汇总。_
+{% endif %}
+
+---
+
+## 5. 下周展望
+
+{% for line in forecast_bullets %}
+- {{ line }}
+{% endfor %}
+
+---
+
+## 本周构成
+
+| 日期 | 文件 | 政策信号数 | 库存信号数 | ETF 日收益 |
+|---|---|---|---|---|
+{% for b in briefs_aggregated %}
+| {{ b.date }} | [{{ b.filename }}](../briefs/{{ b.filename }}) | {{ b.policy_count }} | {{ b.inventory_count }} | {{ '%+0.2f'|format(b.etf_daily_pct) ~ '%' if b.etf_daily_pct is not none else '—' }} |
+{% endfor %}
+
+{% if notes %}
+> 备注：
+{% for note in notes %}
+> - {{ note }}
+{% endfor %}
+{% endif %}
+
+---
+
+## 元信息
+
+- 周次：ISO `{{ iso_year }}-W{{ '%02d'|format(week_number) }}`
+- 区间：`{{ week_start }} → {{ week_end }}`
+- 聚合方式：deterministic rule-based digest（v0.9 暂不接入 LLM 合成；可选 `--with-llm` 生成英文 sibling）
+- 上游：output/briefs 内已存在的 CN 每日简报
+
+> Disclaimer：本周回顾不构成投资建议。所有信号来自公开数据源 + 自建 alt-data pipeline，仅供研究与教学讨论。

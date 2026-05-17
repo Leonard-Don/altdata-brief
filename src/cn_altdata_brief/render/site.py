@@ -1,12 +1,14 @@
-"""Static site index — minimal jekyll-friendly markdown listing all briefs."""
+"""Static site index — minimal jekyll-friendly markdown listing briefs and (v0.9) digests."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 INDEX_HEADER = """# CN AltData Brief — 历史归档
 
 每个交易日 09:00 (UTC+8) 自动生成的研究简报。免费、可订阅、可引用。
+v0.9 起每周五 18:00 还会发布一份本周回顾（weekly digest），聚合本周 5 份日报。
 
 > 本项目通过 6 个量化项目的真实信号合成日报，详见 [README](../README.md)。
 
@@ -14,9 +16,25 @@ INDEX_HEADER = """# CN AltData Brief — 历史归档
 
 """
 
+DIGEST_SECTION_HEADER = """
+## 本周回顾 / Weekly digests
 
-def render_site_index(briefs_dir: Path, output_path: Path | None = None) -> Path:
+"""
+
+_DIGEST_STEM_RE = re.compile(r"^\d{4}-W\d{2}$")
+
+
+def render_site_index(
+    briefs_dir: Path,
+    output_path: Path | None = None,
+    digests_dir: Path | None = None,
+) -> Path:
     """Build index.md listing every brief in `briefs_dir` newest-first.
+
+    v0.9 — also lists weekly digests from ``digests_dir`` (defaults to
+    ``<briefs_dir parent>/digests``). When that directory does not
+    exist the digest section is omitted entirely, preserving the
+    pre-v0.9 single-section layout.
 
     Returns the path to the written index file.
     """
@@ -35,5 +53,31 @@ def render_site_index(briefs_dir: Path, output_path: Path | None = None) -> Path
         for b in briefs:
             lines.append(f"- [{b.stem}]({b.name})\n")
 
+    inferred_digests = digests_dir or (briefs_dir.parent / "digests")
+    inferred_digests = Path(inferred_digests)
+    if inferred_digests.exists():
+        digests = sorted(
+            (
+                p
+                for p in inferred_digests.glob("*.md")
+                if _looks_like_digest_filename(p.stem)
+            ),
+            reverse=True,
+        )
+        lines.append(DIGEST_SECTION_HEADER)
+        if not digests:
+            lines.append(
+                "_本周回顾尚未生成（每周五 18:00 由 launchd 自动产出）。_\n"
+            )
+        else:
+            for d in digests:
+                lines.append(f"- [{d.stem}](../digests/{d.name})\n")
+
     target.write_text("".join(lines), encoding="utf-8")
     return target
+
+
+def _looks_like_digest_filename(stem: str) -> bool:
+    """``2026-W20`` is a digest; ``2026-W20.en`` is its EN sibling."""
+    base = stem.split(".", 1)[0]
+    return bool(_DIGEST_STEM_RE.fullmatch(base))
