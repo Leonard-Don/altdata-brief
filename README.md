@@ -3,7 +3,7 @@
 [![CI](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml/badge.svg)](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Version](https://img.shields.io/badge/version-v0.4.0-1f6feb)
+![Version](https://img.shields.io/badge/version-v0.5.0-1f6feb)
 ![Sources](https://img.shields.io/badge/sources-4%2F4%20public-2da44e)
 ![Cadence](https://img.shields.io/badge/cadence-T%2B0%20daily-2da44e)
 ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-%F0%9F%9F%A2%20ready-2da44e)
@@ -100,7 +100,8 @@
 | **v0.2** | 3 句式「本日观察」+ 数据质量 `validate` + RSS feed + 发布前保护 | ✅ 完成 |
 | **v0.3** | `data/public/*_summary.json` 优先 + `--source-mode` + GitHub Actions 通路 | ✅ 完成 |
 | **v0.4** | **4/4 adapter 全部接 public summary + 本地 e2e 烟测脚本 + CI fixture 通路 + `resolve_source()`** | ✅ 当前 |
-| **v0.5** | Substack 自动发布 + 邮件订阅入口 + LLM 改写「本日观察」段 | 计划中 |
+| **v0.5** | **macOS launchd 本地每日运行 + 稳定 `latest.md` 符号链接 + 失败 macOS 通知** | ✅ 当前 |
+| **v0.6** | Substack 自动发布 + 邮件订阅入口 + LLM 改写「本日观察」段 | 计划中 |
 | **v1.0** | 付费墙上线 + Weekly Deep-Dive 实战 | 计划中 |
 
 ## 8. 快速开始 / Quickstart
@@ -162,6 +163,37 @@ SMOKE_FIXTURE=1 bash scripts/smoke_e2e.sh   # 跑 tests/fixtures/ 里的固定�
 ```
 
 整套流程目标 <30 秒。CI 用 fixture 模式（避免跨仓依赖），本地用真实模式（兜实情）。
+
+### macOS 本地每日运行 (launchd)
+
+v0.5 起，可以直接在自己 Mac 上跑每日 brief，不再依赖 GitHub Actions 跨仓 PAT。launchd job 每个工作日 17:00（北京时间 / 收盘后）调用 `uv run cn-altdata-brief generate --source-mode auto`，把结果写进 `output/briefs/YYYY-MM-DD.md`，并维护一个稳定的 `output/briefs/latest.md` 符号链接供外部读取（RSS、发布脚本等）。
+
+```bash
+# 一键安装：写 plist、launchctl load、自检
+bash scripts/install_launchd_macos.sh
+
+# 立刻手动跑一次（不用等 17:00），用来验证整套流程
+bash scripts/run_now.sh
+
+# 卸载
+bash scripts/uninstall_launchd_macos.sh
+```
+
+日志在 `output/launchd_runs.log`（每次运行追加时间戳 + 完整 generate 输出）。job 非零退出时会通过 `osascript display notification` 弹一条 macOS 通知。
+
+```bash
+# 查看任务是否已排队
+launchctl list | grep cn-altdata
+
+# 跟踪运行日志
+tail -f output/launchd_runs.log
+```
+
+非 macOS 平台（Linux 服务器、WSL）使用常规 `cron` 即可：参见现有 `scripts/generate_daily.sh`，crontab 一行：
+
+```cron
+0 9 * * 1-5 /path/to/cn-altdata-brief/scripts/generate_daily.sh >> /tmp/cn-altdata-brief.log 2>&1
+```
 
 更深入：[docs/architecture.md](docs/architecture.md) · [docs/monetization_plan.md](docs/monetization_plan.md)
 
