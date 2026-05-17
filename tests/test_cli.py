@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from cn_altdata_brief import cli as cli_mod
 from cn_altdata_brief import validate as validate_mod
 from cn_altdata_brief.adapters import (
     etf_512400 as etf_mod,
@@ -21,6 +22,7 @@ from cn_altdata_brief.adapters import (
     super_pricing as sp_mod,
 )
 from cn_altdata_brief.cli import main
+from cn_altdata_brief.llm import RephraseResult
 
 
 @pytest.fixture
@@ -116,6 +118,107 @@ def test_cli_generate_no_charts_flag(
     # no index.md when --no-index
     assert not (tmp_path / "b" / "index.md").exists()
     assert not (tmp_path / "feed.xml").exists()
+
+
+def test_cli_generate_with_llm_uses_validated_polish(
+    patched_default_paths: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    usage_log = tmp_path / "usage.jsonl"
+    calls: list[tuple[str, dict, str]] = []
+    logged: list[tuple[str, Path, dict]] = []
+
+    def fake_rephrase(raw_text: str, context: dict, *, model: str) -> RephraseResult:
+        calls.append((raw_text, context, model))
+        return RephraseResult(
+            raw_text=raw_text,
+            polished_text=raw_text.replace("今日核心信号是", "今日最需要留意的是"),
+            status="ok",
+            llm_model_used=model,
+            latency_ms=7.5,
+            input_tokens=120,
+            output_tokens=60,
+        )
+
+    def fake_log(result: RephraseResult, log_path: Path, *, extra: dict | None = None) -> None:
+        logged.append((result.status, log_path, extra or {}))
+
+    monkeypatch.setattr(cli_mod, "rephrase_observation", fake_rephrase)
+    monkeypatch.setattr(cli_mod, "log_usage", fake_log)
+
+    code = main(
+        [
+            "generate",
+            "--date",
+            "2026-05-17",
+            "--briefs-dir",
+            str(tmp_path / "briefs"),
+            "--charts-dir",
+            str(tmp_path / "charts"),
+            "--no-charts",
+            "--no-index",
+            "--no-feed",
+            "--with-llm",
+            "--llm-model",
+            "fake-model",
+            "--llm-usage-log",
+            str(usage_log),
+        ]
+    )
+
+    assert code == 0
+    text = (tmp_path / "briefs" / "2026-05-17.md").read_text(encoding="utf-8")
+    assert "llm_requested: true" in text
+    assert "llm_rephrase_used: true" in text
+    assert "fake-model" in text
+    assert "今日最需要留意的是" in text
+    assert "原始规则化版本（deterministic source text）" in text
+    assert calls and calls[0][1]["industries"]
+    assert logged == [
+        ("ok", usage_log, {"date": "2026-05-17", "section": "observation"})
+    ]
+
+
+def test_cli_generate_with_llm_fallback_renders_raw(
+    patched_default_paths: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_rephrase(raw_text: str, context: dict, *, model: str) -> RephraseResult:
+        return RephraseResult(
+            raw_text=raw_text,
+            polished_text=raw_text,
+            status="validation_failed",
+            llm_model_used=model,
+            note="numbers missing",
+        )
+
+    monkeypatch.setattr(cli_mod, "rephrase_observation", fake_rephrase)
+    monkeypatch.setattr(cli_mod, "log_usage", lambda *args, **kwargs: None)
+
+    code = main(
+        [
+            "generate",
+            "--date",
+            "2026-05-17",
+            "--briefs-dir",
+            str(tmp_path / "briefs"),
+            "--charts-dir",
+            str(tmp_path / "charts"),
+            "--no-charts",
+            "--no-index",
+            "--no-feed",
+            "--with-llm",
+        ]
+    )
+
+    assert code == 0
+    text = (tmp_path / "briefs" / "2026-05-17.md").read_text(encoding="utf-8")
+    assert "llm_requested: true" in text
+    assert "llm_rephrase_used: false" in text
+    assert "status=`validation_failed`" in text
+    assert "原始规则化版本（deterministic source text）" not in text
 
 
 def test_cli_validate_json_success(

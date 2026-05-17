@@ -27,9 +27,9 @@
 | 2 | **库存信号** | super-pricing-system / macro_hf | LME/SHFE 金属周价格变化 |
 | 3 | **ETF 资金流** | ETF 512400 liveSnapshot | 行情 / NAV / source-health 评级 |
 | 4 | **行业温度** | quant-trading-system | 行业 heat 排行 + 政策叠加 |
-| 5 | **本日观察** | 全源跨切 | 3 句确定性归纳，无 LLM |
+| 5 | **本日观察** | 全源跨切 | 默认 3 句确定性归纳；可选本地 LLM 改写 |
 
-合成全部基于**确定性规则**——v0.2 仍不接入 LLM，刻意"无聊但可靠"。这样新读者能复现，老读者能引用。
+默认合成全部基于**确定性规则**，刻意"无聊但可靠"。`--with-llm` 只会改写「本日观察」一段，并且保留原始规则化文本；依赖缺失、调用失败、数字或行业名校验失败时都会回退到 deterministic 输出。这样新读者能复现，老读者能引用。
 
 ## 2. 为什么有它 / Why it exists
 
@@ -102,7 +102,8 @@
 | **v0.4** | **4/4 adapter 全部接 public summary + 本地 e2e 烟测脚本 + CI fixture 通路 + `resolve_source()`** | ✅ 当前 |
 | **v0.5** | macOS launchd 本地每日运行 + 稳定 `latest.md` 符号链接 + 失败 macOS 通知 | ✅ 完成 |
 | **v0.6** | **gh-pages 自动发布管道 + Jekyll 主题 + 公共 URL** | ✅ 当前 |
-| **v0.7** | Substack 自动发布 + 邮件订阅入口 + LLM 改写「本日观察」段 | 计划中 |
+| **v0.7** | 本地显式开启的 LLM 改写「本日观察」段；原文保留 + usage 记录 + 校验失败回退 | 小范围实验中 |
+| **v0.8** | Substack 自动发布 + 邮件订阅入口 | 计划中 |
 | **v1.0** | 付费墙上线 + Weekly Deep-Dive 实战 | 计划中 |
 
 ## 8. 快速开始 / Quickstart
@@ -118,6 +119,24 @@ uv run cn-altdata-brief generate --source-mode public  # CI mode, public summari
 
 生成结果落在 `output/briefs/YYYY-MM-DD.md`、`output/charts/YYYY-MM-DD/*.png` 与 `output/feed.xml`。
 发布/CI 场景请使用 `uv run cn-altdata-brief validate --fail-on-warn`，把 WARN 也升级为阻断。
+
+### 可选 LLM 改写 / Optional LLM rephrase
+
+默认 `generate` 不会调用 LLM。若只想把「本日观察」改写成更顺的新闻体中文，可在本机显式开启：
+
+```bash
+uv sync --extra llm
+export ANTHROPIC_API_KEY=...
+uv run cn-altdata-brief generate --with-llm
+uv run cn-altdata-brief llm-usage
+```
+
+边界：
+
+- LLM 只改写「本日观察」段，不生成新信号、不改写其他段落。
+- 原始规则化版本会保留在简报折叠区；front matter 记录 `llm_requested`、`llm_rephrase_used`、`llm_status` 与原文 hash。
+- 改写文本必须保留原始数字和行业/品种名；校验不通过就发布 deterministic 原文。
+- 本项目输出仅供研究与教学讨论，不构成投资建议；LLM 改写不会改变这个边界。
 
 ### 数据源解析顺序 / Source resolution
 

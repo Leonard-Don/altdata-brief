@@ -1,3 +1,18 @@
+---
+date: {{ date }}
+generated_at: {{ fetched_at }}
+llm_requested: {{ 'true' if llm.requested else 'false' }}
+llm_rephrase_used: {{ 'true' if llm.used else 'false' }}
+llm_status: {{ llm.status }}
+llm_model: {{ llm.model if llm.model else 'null' }}
+observation_raw_hash: {{ llm.raw_hash }}
+{% if llm.latency_ms is not none %}
+llm_latency_ms: {{ llm.latency_ms|round(1) }}
+llm_input_tokens: {{ llm.input_tokens if llm.input_tokens is not none else 'null' }}
+llm_output_tokens: {{ llm.output_tokens if llm.output_tokens is not none else 'null' }}
+{% endif %}
+---
+
 # CN AltData Brief — {{ date }}
 
 > 由 `cn-altdata-brief` 在 {{ fetched_at }} 自动生成，合成自 4 个本地量化项目的真实数据缓存。
@@ -22,6 +37,15 @@
 - 生成时间：`{{ fetched_at }}`
 - 数据日期：`{{ date }}`
 - 上游项目：super-pricing-system · quant-trading-system · index-inclusion-research · ETF 512400
-- 合成方式：rule-based deterministic synthesis（v0.2 暂不接入 LLM）
+{% if llm.used %}
+- 合成方式：rule-based deterministic synthesis；仅「本日观察」使用本地显式开启的 LLM 改写。
+- LLM 模型：`{{ llm.model }}` · status=`{{ llm.status }}`{% if llm.latency_ms is not none %} · latency=`{{ llm.latency_ms|round(1) }}ms`{% endif %}
+- 原始规则化版本保留在「本日观察」折叠区，可与改写版本逐句核对。
+{% elif llm.requested %}
+- 合成方式：rule-based deterministic synthesis；LLM 改写已请求但未用于正文（status=`{{ llm.status }}`）。
+- 本日观察使用原始规则化版本，避免在依赖缺失、调用失败或校验失败时发布改写文本。
+{% else %}
+- 合成方式：rule-based deterministic synthesis（默认不调用 LLM）
+{% endif %}
 
 > Disclaimer：本简报不构成投资建议。所有信号来自公开数据源 + 自建 alt-data pipeline，仅供研究与教学讨论。

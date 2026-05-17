@@ -71,6 +71,41 @@ def test_render_full_brief_contains_all_five_sections(
     assert "**Sources:**" in md
     # Disclaimer present
     assert "Disclaimer" in md
+    assert "llm_requested: false" in md
+    assert "llm_rephrase_used: false" in md
+    assert "默认不调用 LLM" in md
+
+
+def test_render_brief_with_llm_polished_observation_keeps_raw_audit(
+    super_pricing_cache: Path,
+    quant_trading_cache: Path,
+    index_research_tables: Path,
+    etf_512400_snapshot: Path,
+) -> None:
+    ctx = _build_context(
+        super_pricing_cache, quant_trading_cache, index_research_tables, etf_512400_snapshot
+    )
+    raw = ctx["observation"]["raw_text"]
+    ctx["observation"]["polished_text"] = raw.replace("今日核心信号是", "今日最需要留意的是")
+    ctx["llm"] = {
+        "requested": True,
+        "used": True,
+        "status": "ok",
+        "model": "fake-model",
+        "latency_ms": 12.3,
+        "input_tokens": 100,
+        "output_tokens": 80,
+        "raw_hash": "abc123",
+        "note": None,
+    }
+
+    md = render_brief_markdown(context=ctx)
+
+    assert "llm_requested: true" in md
+    assert "llm_rephrase_used: true" in md
+    assert "fake-model" in md
+    assert "原始规则化版本（deterministic source text）" in md
+    assert raw.splitlines()[0] in md
 
 
 def test_render_brief_with_charts_embeds_image_tags(

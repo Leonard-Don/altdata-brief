@@ -1,8 +1,23 @@
 ## 5. {{ observation.title }}
 
+{% if observation.polished_text is defined and observation.polished_text %}
+{% for line in observation.polished_text.split('\n') %}
+> {{ line }}
+{% endfor %}
+
+<details>
+<summary>原始规则化版本（deterministic source text）</summary>
+
 {% for sentence in observation.sentences %}
 > {{ sentence }}
 {% endfor %}
+
+</details>
+{% else %}
+{% for sentence in observation.sentences %}
+> {{ sentence }}
+{% endfor %}
+{% endif %}
 
 **Sources:** {{ observation.sources|join(' · ') if observation.sources else 'n/a' }}
 
