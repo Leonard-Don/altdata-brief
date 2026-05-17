@@ -175,6 +175,46 @@ def test_publish_creates_orphan_branch_and_commits(
     assert "feed.xml" in tree
 
 
+def test_publish_copies_atom_feed_alongside_rss(
+    tmp_repo: Path,
+    brief_layout: dict[str, Path],
+    template_dir: Path,
+) -> None:
+    """v0.10 — Atom feed is planned and copied onto the gh-pages branch."""
+    rss_xml = "<rss><channel><title>rss fixture</title></channel></rss>\n"
+    atom_xml = '<feed xmlns="http://www.w3.org/2005/Atom"><title>atom fixture</title></feed>\n'
+    brief_layout["feed"].write_text(rss_xml, encoding="utf-8")
+    atom = brief_layout["feed"].with_name("feed.atom")
+    atom.write_text(atom_xml, encoding="utf-8")
+    pub = GhPagesPublisher(
+        brief_dir=brief_layout["briefs"],
+        chart_dir=brief_layout["charts"],
+        feed_path=brief_layout["feed"],
+        atom_path=atom,
+        template_dir=template_dir,
+        repo_root=tmp_repo,
+    )
+
+    dry_run = pub.publish("2026-05-17", push=False, dry_run=True)
+    assert dry_run.plan.feed_source == brief_layout["feed"]
+    assert dry_run.plan.atom_source == atom
+    assert {p.name for p in dry_run.plan.files_to_copy} == {
+        "2026-05-17.md",
+        "policy_impact.png",
+        "etf_nav.png",
+        "feed.xml",
+        "feed.atom",
+    }
+
+    result = pub.publish("2026-05-17", push=False)
+    assert result.commit_sha is not None
+    tree_entries = set(_git(tmp_repo, "ls-tree", "-r", "--name-only", "gh-pages").splitlines())
+    assert "feed.xml" in tree_entries
+    assert "feed.atom" in tree_entries
+    assert _git(tmp_repo, "show", "gh-pages:feed.xml") == rss_xml
+    assert _git(tmp_repo, "show", "gh-pages:feed.atom") == atom_xml
+
+
 def test_index_md_renders_5_row_table() -> None:
     body = _render_index_md(
         ["2026-05-17", "2026-05-16", "2026-05-15", "2026-05-14", "2026-05-13"]
