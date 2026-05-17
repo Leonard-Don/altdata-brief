@@ -3,7 +3,7 @@
 [![CI](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml/badge.svg)](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Version](https://img.shields.io/badge/version-v0.8.0-1f6feb)
+![Version](https://img.shields.io/badge/version-v0.9.0-1f6feb)
 ![Languages](https://img.shields.io/badge/languages-CN%20%2B%20EN-2da44e)
 ![Sources](https://img.shields.io/badge/sources-4%2F4%20public-2da44e)
 ![Cadence](https://img.shields.io/badge/cadence-T%2B0%20daily-2da44e)
@@ -103,8 +103,9 @@
 | **v0.4** | **4/4 adapter 全部接 public summary + 本地 e2e 烟测脚本 + CI fixture 通路 + `resolve_source()`** | ✅ 当前 |
 | **v0.5** | macOS launchd 本地每日运行 + 稳定 `latest.md` 符号链接 + 失败 macOS 通知 | ✅ 完成 |
 | **v0.6** | **gh-pages 自动发布管道 + Jekyll 主题 + 公共 URL** | ✅ 当前 |
-| **v0.7** | 本地显式开启的 LLM 改写「本日观察」段；原文保留 + usage 记录 + 校验失败回退 | 小范围实验中 |
-| **v0.8** | Substack 自动发布 + 邮件订阅入口 | 计划中 |
+| **v0.7** | 本地显式开启的 LLM 改写「本日观察」段；原文保留 + usage 记录 + 校验失败回退 | ✅ 完成 |
+| **v0.8** | **双语 CN+EN 简报（LLM 翻译 + 数字/行业名校验回退）** | ✅ 完成 |
+| **v0.9** | **每周五 18:00 本周回顾（aggregate 5 份日报为 themes/inflections/forecast）** | ✅ 当前 |
 | **v1.0** | 付费墙上线 + Weekly Deep-Dive 实战 | 计划中 |
 
 ## 8. 快速开始 / Quickstart
@@ -265,6 +266,59 @@ RUN_PUBLISH_AFTER_GENERATE=0 bash scripts/run_now.sh
 整套设置（含 `gh repo create` + GitHub Pages source 切换）见 [docs/PUBLISHING.md](docs/PUBLISHING.md)。
 
 `gh-pages` 分支是 orphan 历史，与 `main` 完全独立——主仓库的提交历史不会被 publish 污染。`gh-pages-template/` 下的 Jekyll 模板每次 publish 会覆盖到分支上，所以站点样式只需在 `main` 上改一次。
+
+### v0.9 — 本周回顾 / Weekly digest (Friday cadence)
+
+每个周五 18:00（北京时间，工作日收盘后 1 小时）自动聚合本周 5 份日报，输出一份 `本周回顾 / Weekly digest`，与日报放在同一 gh-pages 站点上：
+
+```bash
+# 立即生成本周（按 anchor 推断 Mon..Fri）
+uv run cn-altdata-brief weekly-digest
+
+# 生成历史某一周（anchor 是该周任意工作日）
+uv run cn-altdata-brief weekly-digest --week-of 2026-05-14
+
+# 提高 recurrence 门槛 → 主题更少但更强
+uv run cn-altdata-brief weekly-digest --recurrence-threshold 4
+
+# 顺便生成英文版（复用 v0.8 翻译基础设施）
+uv run cn-altdata-brief weekly-digest --with-llm
+```
+
+数字落地：
+
+- 文件位置：`output/digests/<iso_year>-W<week>.md`（如 `2026-W20.md`）
+- gh-pages 上 mirror 到 `digests/<iso_year>-W<week>.md`，首页 `本周回顾 / Weekly digests` 表格列出全部 digest（CN + EN 双列）
+- 周度合成内容：
+  1. **本周核心主题** — 政策 / 库存维度在 ≥3 个交易日重复出现的行业 / 金属
+  2. **信号反转** — 周内数值正负号至少翻转 1 次的 (行业, 信号类型) 对
+  3. **行业累计影响** — 政策 avg_impact 周度累计（|值|前 8）
+  4. **ETF 资金流摘要** — ETF 512400 日 NAV 变动累加
+  5. **下周展望** — 持续 4 天以上的主题 + Thu/Fri 出现的反转
+- RSS feed 同时包含日报与周报；周报 item 用 `[Weekly] ...` 前缀 + `:digest` GUID 后缀 + `<category>weekly-digest</category>`，订阅端可按 cadence 过滤
+- 全部 5 段都是 **deterministic rule-based**——`--with-llm` 只用来产出 EN sibling
+
+#### Friday 自动化
+
+```bash
+# 一键安装两个 launchd job (Mon-Fri 17:00 daily + Fri 18:00 weekly)
+bash scripts/install_launchd_macos.sh
+
+# 不等周五，手动验证整套流程：
+bash scripts/weekly_digest_now.sh
+
+# 卸载两个 job：
+bash scripts/uninstall_launchd_macos.sh
+
+# 查看两个 job 是否在列：
+launchctl list | grep cn-altdata
+#  com.leonardodon.cn-altdata-brief
+#  com.leonardodon.cn-altdata-brief.weekly
+```
+
+`scripts/weekly_digest_now.sh` 跑完后默认会链式调用 `scripts/publish_now.sh`，所以新 digest 周五就会出现在公共 URL。临时关闭：`RUN_PUBLISH_AFTER_DIGEST=0`。
+
+更深入的 publishing 流程见 [docs/PUBLISHING.md §8](docs/PUBLISHING.md)。
 
 ## 9. License + Contact
 

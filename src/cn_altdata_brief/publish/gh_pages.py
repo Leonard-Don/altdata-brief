@@ -43,6 +43,7 @@ Design notes
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -72,6 +73,10 @@ class PublishPlan:
     Used for the dry-run path and surfaced inside :class:`PublishResult`
     so callers can show or log the planned operations without rerunning
     the planning logic.
+
+    v0.9 — also tracks any weekly digests under ``digest_sources`` so
+    they ride along to the gh-pages branch on every publish (no need
+    for a separate "publish-digest" subcommand).
     """
 
     date: str
@@ -81,6 +86,8 @@ class PublishPlan:
     feed_source: Path | None
     files_to_copy: list[Path] = field(default_factory=list)
     index_briefs: list[str] = field(default_factory=list)
+    index_digests: list[str] = field(default_factory=list)
+    digest_sources: list[Path] = field(default_factory=list)
     will_create_orphan: bool = False
 
 
@@ -147,6 +154,7 @@ class GhPagesPublisher:
         repo_root: Path | None = None,
         gh_pages_branch: str = _DEFAULT_BRANCH,
         git_executable: str = "git",
+        digest_dir: Path | None = None,
     ) -> None:
         self.brief_dir = Path(brief_dir)
         self.chart_dir = Path(chart_dir) if chart_dir is not None else None
@@ -159,6 +167,16 @@ class GhPagesPublisher:
         )
         self.gh_pages_branch = gh_pages_branch
         self.git = git_executable
+        # v0.9 — weekly digests directory. Defaults to ``<brief_dir
+        # parent>/digests`` so callers that already configured
+        # ``brief_dir`` get the right place "for free". Passing ``None``
+        # explicitly disables digest publishing entirely (useful in
+        # tests that want to keep the old payload shape).
+        if digest_dir is None:
+            inferred = self.brief_dir.parent / "digests"
+            self.digest_dir: Path | None = inferred if inferred.exists() else None
+        else:
+            self.digest_dir = Path(digest_dir)
 
     # ------------------------------------------------------------------
     # Public API
@@ -190,8 +208,16 @@ class GhPagesPublisher:
         if feed_source is not None:
             files_to_copy.append(feed_source)
 
+        # v0.9 — pick up any weekly digests sitting in ``digest_dir``.
+        # We publish ALL existing digests on every run (cheap; a few kb
+        # each), so a Friday digest stays alive across subsequent
+        # weekday daily publishes.
+        digest_sources = self._collect_digest_sources()
+        files_to_copy.extend(digest_sources)
+
         # Index lists ALL dated briefs (existing + the new one merged in).
         all_dates = self._collect_all_brief_dates(extra=date_str)
+        digest_stems = self._collect_digest_stems(digest_sources)
 
         will_create_orphan = not self._branch_exists(self.gh_pages_branch)
 
@@ -203,6 +229,8 @@ class GhPagesPublisher:
             feed_source=feed_source,
             files_to_copy=files_to_copy,
             index_briefs=all_dates,
+            index_digests=digest_stems,
+            digest_sources=digest_sources,
             will_create_orphan=will_create_orphan,
         )
 
@@ -214,6 +242,44 @@ class GhPagesPublisher:
         the canonical CN file because :meth:`plan` already appended it.
         """
         return sorted(self.brief_dir.glob(f"{date_str}.*.md"))
+
+    def _collect_digest_sources(self) -> list[Path]:
+        """Return every weekly digest markdown file under ``digest_dir``.
+
+        Order is reverse-alphabetic so the index renderer sees newest
+        first. Returns an empty list when ``digest_dir`` is unset or
+        does not exist — this keeps the daily-only publish path
+        unchanged for tests that never put a digests/ directory in
+        place.
+        """
+        if self.digest_dir is None or not self.digest_dir.exists():
+            return []
+        # Filter to files that look like weekly digests: stem matches
+        # ``<iso_year>-W<week>`` (optionally with a language suffix
+        # like ``.en``). Anything else in the digests/ folder (notes,
+        # archives, drafts) is ignored.
+        out: list[Path] = []
+        for p in self.digest_dir.glob("*.md"):
+            stem = p.stem
+            if _looks_like_digest_stem(stem):
+                out.append(p)
+        return sorted(out, reverse=True)
+
+    def _collect_digest_stems(self, sources: list[Path]) -> list[str]:
+        """De-dup the stems that should appear in the index table.
+
+        Index keys on the CN digest stem (e.g. ``2026-W20``); language
+        siblings (``2026-W20.en``) are detected at render time, same as
+        the daily-brief table.
+        """
+        stems: set[str] = set()
+        for p in sources:
+            stem = p.stem
+            if "." in stem:
+                stem = stem.split(".", 1)[0]
+            if _looks_like_digest_stem(stem):
+                stems.add(stem)
+        return sorted(stems, reverse=True)
 
     def plan_only(self, date_str: str) -> PublishResult:
         """Convenience wrapper around :meth:`plan` returning a `PublishResult`."""
@@ -281,7 +347,7 @@ class GhPagesPublisher:
 
             self._copy_into_worktree(the_plan)
             self._overlay_template()
-            self._write_index_md(the_plan.index_briefs)
+            self._write_index_md(the_plan.index_briefs, the_plan.index_digests)
 
             self._git("add", "-A")
             if not self._has_staged_changes():
@@ -498,6 +564,13 @@ class GhPagesPublisher:
         if plan.feed_source is not None:
             shutil.copy2(plan.feed_source, self.repo_root / plan.feed_source.name)
 
+        # 4. v0.9 — weekly digests → ``digests/<iso_year>-W<week>.md``.
+        if plan.digest_sources:
+            digests_target_dir = self.repo_root / "digests"
+            digests_target_dir.mkdir(parents=True, exist_ok=True)
+            for digest_md in plan.digest_sources:
+                shutil.copy2(digest_md, digests_target_dir / digest_md.name)
+
     def _overlay_template(self) -> None:
         """Copy ``gh-pages-template/*`` over the worktree (only if present)."""
         if not self.template_dir.exists():
@@ -514,20 +587,33 @@ class GhPagesPublisher:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
 
-    def _write_index_md(self, dated_briefs: list[str]) -> None:
+    def _write_index_md(self, dated_briefs: list[str], digest_stems: list[str] | None = None) -> None:
         """Emit the public landing page listing every published brief.
 
         v0.8 — looks for sibling ``YYYY-MM-DD.en.md`` files inside the
         gh-pages ``briefs/`` directory (which we just wrote to) and
         passes a per-date language map to :func:`_render_index_md`.
         Dates without an EN file render an em-dash in the EN column.
+
+        v0.9 — also lists weekly digests (``<iso_year>-W<week>``) in
+        their own section. Same EN-sibling detection logic, but the
+        digests live under ``digests/`` not ``briefs/``.
         """
         briefs_root = self.repo_root / "briefs"
         languages_per_date = {
             stem: _detect_languages_for(briefs_root, stem) for stem in dated_briefs
         }
+        digests_root = self.repo_root / "digests"
+        languages_per_digest = {
+            stem: _detect_languages_for(digests_root, stem) for stem in (digest_stems or [])
+        }
         target = self.repo_root / "index.md"
-        body = _render_index_md(dated_briefs, languages_per_date=languages_per_date)
+        body = _render_index_md(
+            dated_briefs,
+            languages_per_date=languages_per_date,
+            digest_stems=digest_stems or [],
+            languages_per_digest=languages_per_digest,
+        )
         target.write_text(body, encoding="utf-8")
 
     # ------------------------------------------------------------------
@@ -556,14 +642,18 @@ def _render_index_md(
     dated_briefs: list[str],
     *,
     languages_per_date: dict[str, list[str]] | None = None,
+    digest_stems: list[str] | None = None,
+    languages_per_digest: dict[str, list[str]] | None = None,
 ) -> str:
     """Render the gh-pages landing page.
 
     Public format — kept stable so subscribers can scrape it. v0.8
     splits the brief column into Chinese / English (CN ground truth +
-    LLM translation). ``languages_per_date`` is optional; when omitted
-    we render only the Chinese column (backward-compatible with
-    pre-v0.8 publish runs).
+    LLM translation). v0.9 adds a separate "本周回顾 / Weekly digests"
+    section listing the digest files under ``digests/`` (the dailies
+    stay in ``briefs/``). ``digest_stems``, ``languages_per_digest``,
+    and ``languages_per_date`` are all optional so callers from
+    pre-v0.9 publish runs still produce identical-shape output.
     """
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = [
@@ -577,6 +667,7 @@ def _render_index_md(
         "> Daily, deterministic research brief over China-equity alt-data, ",
         "> synthesized from 6 quant projects. Updated every trading day at 17:00 (UTC+8).",
         "> 中文为权威版本，English 为 LLM 翻译（保留事实，标注 source hash）。",
+        "> v0.9 起每周五 18:00 还会发布一份 **本周回顾 / Weekly digest**，聚合本周 5 份日报。",
         "",
         f"_Last regenerated: {now}_",
         "",
@@ -600,11 +691,36 @@ def _render_index_md(
                 en_cell = "—"
             lines.append(f"| {stem} | {cn_cell} | {en_cell} |")
     lines.append("")
+    lines.append("## 本周回顾 / Weekly digests")
+    lines.append("")
+    lines.append("| 周次 / Week | 中文 / Chinese | English |")
+    lines.append("|---|---|---|")
+    if not (digest_stems or []):
+        lines.append("| _(暂无 / none yet — generated every Friday 18:00)_ | — | — |")
+    else:
+        for stem in digest_stems or []:
+            langs = (languages_per_digest or {}).get(stem, [])
+            cn_cell = f"[{stem}.md](digests/{stem}.md)"
+            if "en" in langs:
+                en_cell = f"[{stem}.en.md](digests/{stem}.en.md)"
+            else:
+                en_cell = "—"
+            lines.append(f"| {stem} | {cn_cell} | {en_cell} |")
+    lines.append("")
     lines.append("---")
     lines.append("")
     lines.append("Generated by [`cn-altdata-brief`](https://github.com/Leonard-Don/cn-altdata-brief) · MIT")
     lines.append("")
     return "\n".join(lines)
+
+
+def _looks_like_digest_stem(stem: str) -> bool:
+    """Match ``<iso_year>-W<week>`` style digest filenames.
+
+    Returns True for stems like ``2026-W20`` and False for daily
+    briefs (``2026-05-17``) or non-date files (``index``, ``latest``).
+    """
+    return bool(re.fullmatch(r"\d{4}-W\d{2}", stem))
 
 
 def _detect_languages_for(briefs_root: Path, date_stem: str) -> list[str]:

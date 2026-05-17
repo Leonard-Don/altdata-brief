@@ -120,3 +120,37 @@ def test_cli_generate_writes_feed(patched_default_paths: None, tmp_path: Path) -
     assert feed.exists()
     item = ET.parse(feed).getroot().find("channel/item")
     assert "2026-05-17" in (item.findtext("title") or "")
+
+
+def test_render_feed_merges_weekly_digests(tmp_path: Path) -> None:
+    """v0.9 — when ``digests_dir`` is supplied, weekly digests merge into the same feed."""
+    briefs = tmp_path / "briefs"
+    briefs.mkdir()
+    (briefs / "2026-05-15.md").write_text(
+        SAMPLE_BRIEF.replace("2026-05-17", "2026-05-15"), encoding="utf-8"
+    )
+    digests = tmp_path / "digests"
+    digests.mkdir()
+    (digests / "2026-W20.md").write_text(
+        "# 本周回顾 W20 — 2026-05-11 → 2026-05-15\n\n- **新能源汽车**: weekly takeaway\n",
+        encoding="utf-8",
+    )
+    feed_path = tmp_path / "feed.xml"
+    render_feed(
+        briefs_dir=briefs,
+        feed_path=feed_path,
+        digests_dir=digests,
+        site_url="https://example.com",
+    )
+    root = ET.parse(feed_path).getroot()
+    items = root.findall("channel/item")
+    titles = [i.findtext("title") or "" for i in items]
+    # Daily AND weekly items must both appear.
+    assert any("2026-05-15" in t for t in titles)
+    assert any("Weekly" in t for t in titles)
+    # The digest item must carry a category=weekly-digest.
+    categories = [i.findtext("category") for i in items if i.findtext("category")]
+    assert "weekly-digest" in categories
+    # GUID shape: ``cn-altdata-brief:digest:<stem>``.
+    guids = [i.findtext("guid") or "" for i in items]
+    assert any("cn-altdata-brief:digest:2026-W20" in g for g in guids)

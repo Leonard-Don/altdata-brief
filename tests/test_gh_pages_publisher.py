@@ -344,3 +344,40 @@ def test_chart_dir_missing_silently_skipped(
     tree = _git(tmp_repo, "ls-tree", "-r", "--name-only", "gh-pages")
     assert "briefs/2026-05-17.md" in tree
     assert "charts/" not in tree  # no chart was copied
+
+
+def test_v09_digests_published_alongside_briefs(
+    tmp_repo: Path,
+    brief_layout: dict[str, Path],
+    template_dir: Path,
+    tmp_path: Path,
+) -> None:
+    """v0.9 — weekly digests in digest_dir land on the gh-pages branch."""
+    digests = tmp_path / "output" / "digests"
+    digests.mkdir(parents=True, exist_ok=True)
+    (digests / "2026-W20.md").write_text(
+        "# 本周回顾 W20 — 2026-05-11 → 2026-05-15\nbody\n",
+        encoding="utf-8",
+    )
+    pub = GhPagesPublisher(
+        brief_dir=brief_layout["briefs"],
+        chart_dir=brief_layout["charts"],
+        feed_path=brief_layout["feed"],
+        template_dir=template_dir,
+        repo_root=tmp_repo,
+        digest_dir=digests,
+    )
+    result = pub.publish("2026-05-17", push=False)
+    assert result.commit_sha is not None
+    tree = _git(tmp_repo, "ls-tree", "-r", "--name-only", "gh-pages")
+    assert "digests/2026-W20.md" in tree
+    # Index must list the digest in its dedicated section.
+    index = subprocess.run(
+        ["git", "show", "gh-pages:index.md"],
+        cwd=str(tmp_repo),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "本周回顾 / Weekly digests" in index
+    assert "2026-W20" in index

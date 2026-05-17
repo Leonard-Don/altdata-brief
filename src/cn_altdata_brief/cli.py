@@ -10,6 +10,9 @@ Usage::
     cn-altdata-brief publish               # push today's brief to gh-pages (v0.6)
     cn-altdata-brief publish --dry-run     # show what would happen
     cn-altdata-brief publish --date 2026-05-17 --gh-pages-branch site
+    cn-altdata-brief weekly-digest         # (v0.9) aggregate this week's briefs
+    cn-altdata-brief weekly-digest --week-of 2026-05-17
+    cn-altdata-brief weekly-digest --with-llm  # also emit EN translation
 """
 
 from __future__ import annotations
@@ -30,6 +33,11 @@ from cn_altdata_brief.config import (
     load_source_config,
     source_mode_to_kwargs,
 )
+from cn_altdata_brief.digest import (
+    collect_brief_paths_for_week,
+    compose_weekly_digest,
+    iso_week_bounds,
+)
 from cn_altdata_brief.llm import (
     DEFAULT_LLM_MODEL,
     aggregate_usage,
@@ -43,7 +51,12 @@ from cn_altdata_brief.publish.gh_pages import (
     PublishError,
     default_template_dir,
 )
-from cn_altdata_brief.render import render_all_charts, render_brief_markdown, render_site_index
+from cn_altdata_brief.render import (
+    render_all_charts,
+    render_brief_markdown,
+    render_site_index,
+    render_weekly_digest_markdown,
+)
 from cn_altdata_brief.render.rss import render_feed
 from cn_altdata_brief.synthesis import (
     synthesize_etf_flow,
@@ -79,6 +92,7 @@ DEFAULT_CHARTS_DIR = DEFAULT_OUTPUT_DIR / "charts"
 DEFAULT_FEED_PATH = DEFAULT_OUTPUT_DIR / "feed.xml"
 DEFAULT_LLM_USAGE_LOG = DEFAULT_OUTPUT_DIR / "llm_usage.jsonl"
 DEFAULT_GH_PAGES_BRANCH = "gh-pages"
+DEFAULT_DIGESTS_DIR = DEFAULT_OUTPUT_DIR / "digests"
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +114,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_publish(args)
     if args.command == "llm-usage":
         return _cmd_llm_usage(args)
+    if args.command == "weekly-digest":
+        return _cmd_weekly_digest(args)
 
     parser.print_help()
     return 1
@@ -246,6 +262,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help=f"Optional RSS feed to publish (default: {DEFAULT_FEED_PATH}).",
     )
     pub.add_argument(
+        "--digests-dir",
+        default=str(DEFAULT_DIGESTS_DIR),
+        help=(
+            "v0.9 — weekly digests directory. Every digest md file inside "
+            "is shipped to the gh-pages branch and indexed on the landing "
+            f"page (default: {DEFAULT_DIGESTS_DIR})."
+        ),
+    )
+    pub.add_argument(
         "--gh-pages-branch",
         default=DEFAULT_GH_PAGES_BRANCH,
         help=f"Branch to publish to (default: {DEFAULT_GH_PAGES_BRANCH}).",
@@ -271,6 +296,68 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Commit to gh-pages locally but don't push to origin.",
     )
     pub.add_argument(
+        "-v", "--verbose", action="store_true", help="Verbose logging (subcommand-scoped alias)."
+    )
+
+    digest = subparsers.add_parser(
+        "weekly-digest",
+        help="(v0.9) Aggregate the past week's daily briefs into one digest.",
+    )
+    digest.add_argument(
+        "--week-of",
+        default=None,
+        help=(
+            "Anchor date (YYYY-MM-DD) inside the target week. Defaults to "
+            "today's UTC date; the week starts on Monday and ends Friday."
+        ),
+    )
+    digest.add_argument(
+        "--briefs-dir",
+        default=str(DEFAULT_BRIEFS_DIR),
+        help=f"Daily briefs source directory (default: {DEFAULT_BRIEFS_DIR}).",
+    )
+    digest.add_argument(
+        "--digests-dir",
+        default=str(DEFAULT_DIGESTS_DIR),
+        help=f"Digest output directory (default: {DEFAULT_DIGESTS_DIR}).",
+    )
+    digest.add_argument(
+        "--output",
+        default=None,
+        help=(
+            "Explicit output path. When omitted, the digest is written to "
+            "<digests-dir>/<iso_year>-W<week>.md."
+        ),
+    )
+    digest.add_argument(
+        "--recurrence-threshold",
+        type=int,
+        default=3,
+        help=(
+            "Minimum number of distinct days an industry / metal must "
+            "appear before it qualifies as a theme (default: 3)."
+        ),
+    )
+    digest.add_argument(
+        "--with-llm",
+        action="store_true",
+        help=(
+            "Also emit an English sibling (<base>.en.md) using the v0.8 "
+            "translator. Falls back to CN with a banner on translation "
+            "failure — same contract as the daily brief."
+        ),
+    )
+    digest.add_argument(
+        "--llm-model",
+        default=DEFAULT_LLM_MODEL,
+        help=f"Anthropic model used with --with-llm (default: {DEFAULT_LLM_MODEL}).",
+    )
+    digest.add_argument(
+        "--llm-usage-log",
+        default=str(DEFAULT_LLM_USAGE_LOG),
+        help=f"Append-only JSONL usage log for --with-llm (default: {DEFAULT_LLM_USAGE_LOG}).",
+    )
+    digest.add_argument(
         "-v", "--verbose", action="store_true", help="Verbose logging (subcommand-scoped alias)."
     )
 
@@ -404,7 +491,13 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     feed_path: Path | None = None
     if not args.no_feed:
         feed_path = briefs_dir.parent / "feed.xml"
-        render_feed(briefs_dir=briefs_dir, feed_path=feed_path, site_url=args.site_url)
+        digests_dir = briefs_dir.parent / "digests"
+        render_feed(
+            briefs_dir=briefs_dir,
+            feed_path=feed_path,
+            site_url=args.site_url,
+            digests_dir=digests_dir if digests_dir.exists() else None,
+        )
 
     available_count = sum(1 for s in sections.values() if s.get("available"))
     feed_suffix = f" · feed={feed_path.name}" if feed_path else ""
@@ -777,6 +870,7 @@ def _cmd_publish(args: argparse.Namespace) -> int:
         template_dir=Path(args.template_dir),
         repo_root=Path(args.repo_root),
         gh_pages_branch=args.gh_pages_branch,
+        digest_dir=Path(args.digests_dir) if getattr(args, "digests_dir", None) else None,
     )
 
     try:
@@ -812,6 +906,94 @@ def _cmd_publish(args: argparse.Namespace) -> int:
     print(f"OK · {result.message} · {push_tag} · "
           f"returned to branch={result.original_branch or 'detached'}")
     return 0
+
+
+def _cmd_weekly_digest(args: argparse.Namespace) -> int:
+    """v0.9 — aggregate this week's daily briefs into a single digest."""
+    briefs_dir = Path(args.briefs_dir)
+    digests_dir = Path(args.digests_dir)
+    digests_dir.mkdir(parents=True, exist_ok=True)
+
+    anchor_str = args.week_of or datetime.now(UTC).strftime("%Y-%m-%d")
+    try:
+        anchor = datetime.strptime(anchor_str, "%Y-%m-%d").date()
+    except ValueError:
+        print(
+            f"ERROR: --week-of must be YYYY-MM-DD, got {anchor_str!r}",
+            file=sys.stderr,
+        )
+        return 2
+
+    monday, friday, week_num, iso_year = iso_week_bounds(anchor)
+    brief_paths = collect_brief_paths_for_week(briefs_dir, anchor)
+    if not brief_paths:
+        print(
+            f"WARN: no daily briefs found in {briefs_dir} for week "
+            f"{monday}→{friday}; writing degraded digest with notes.",
+            file=sys.stderr,
+        )
+
+    digest = compose_weekly_digest(
+        brief_paths,
+        anchor=anchor,
+        recurrence_threshold=max(1, int(args.recurrence_threshold)),
+        now=datetime.now(UTC),
+    )
+    markdown = render_weekly_digest_markdown(context=digest.render_context())
+
+    default_filename = f"{iso_year}-W{week_num:02d}.md"
+    output_path = Path(args.output) if args.output else (digests_dir / default_filename)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(markdown, encoding="utf-8")
+
+    en_path: Path | None = None
+    en_status: str | None = None
+    if getattr(args, "with_llm", False):
+        en_path, en_status = _produce_digest_translation(
+            digest_path=output_path,
+            iso_year=iso_year,
+            week_num=week_num,
+            args=args,
+        )
+
+    parts = [
+        f"OK · wrote {output_path}",
+        f"week={iso_year}-W{week_num:02d}",
+        f"briefs={digest.brief_count}/5",
+        f"themes={len(digest.themes)}",
+        f"inflections={len(digest.inflections)}",
+    ]
+    if en_path is not None:
+        parts.append(f"en={en_path.name}({en_status})")
+    print(" · ".join(parts))
+    return 0
+
+
+def _produce_digest_translation(
+    *,
+    digest_path: Path,
+    iso_year: int,
+    week_num: int,
+    args: argparse.Namespace,
+) -> tuple[Path, str]:
+    """Translate a finished weekly digest into English using v0.8 infra.
+
+    The output sits next to the CN digest as ``<base>.en.md`` (e.g.
+    ``2026-W20.en.md``). On any failure the file is still written using
+    the same fallback-banner contract as the daily brief.
+    """
+    source_md = digest_path.read_text(encoding="utf-8")
+    model = str(getattr(args, "llm_model", DEFAULT_LLM_MODEL))
+    result = translate_brief(source_md, target_language="en", model=model)
+    en_path = digest_path.with_suffix(".en.md")
+    en_path.write_text(result.translated_md, encoding="utf-8")
+    _log_translation_usage(
+        result,
+        args=args,
+        date=f"{iso_year}-W{week_num:02d}",
+        language="EN",
+    )
+    return en_path, result.status
 
 
 if __name__ == "__main__":  # pragma: no cover

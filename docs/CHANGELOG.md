@@ -1,5 +1,73 @@
 # Changelog
 
+## v0.9 — 2026-05-17
+
+**feat: v0.9 — weekly digest generator (Friday cadence)**
+
+* `src/cn_altdata_brief/digest/weekly.py` — new `compose_weekly_digest()`
+  entry point and `WeeklyDigest` / `Theme` / `Inflection` /
+  `DailyBriefSummary` dataclasses. Parses the deterministic CN daily
+  briefs (Mon-Fri) and aggregates into themes (≥3 days),
+  inflections (mid-week sign flips), cumulative industry impact,
+  and ETF netflow. **No LLM in the core synthesis** — the
+  digest body is fully reproducible from the same 5 daily-brief
+  markdown files.
+* `templates/weekly_digest.md.j2` — new Jinja template with sections
+  本周核心信号 / 本周核心主题 / 信号反转 / 行业累计影响 / ETF 资金流摘要 /
+  下周展望 + a constituents table that links back to each
+  source daily brief.
+* CLI: new `weekly-digest` subcommand with `--week-of`, `--briefs-dir`,
+  `--digests-dir`, `--output`, `--recurrence-threshold`, `--with-llm`,
+  `--llm-model`, `--llm-usage-log`. Default output path is
+  `output/digests/<iso_year>-W<week>.md`. `--with-llm` re-uses the
+  v0.8 translator to emit an `<base>.en.md` sibling — falls back to
+  CN-with-banner if the SDK / API key is missing.
+* GitHub Pages publisher: `GhPagesPublisher` now takes an optional
+  `digest_dir`. Every digest md inside is shipped to
+  `gh-pages:digests/`. The index renderer gains a second section
+  `## 本周回顾 / Weekly digests` with the same CN / EN columns.
+* RSS feed: `render_feed()` accepts an optional `digests_dir`. Weekly
+  digest items use a `[Weekly]` title prefix, `cn-altdata-brief:digest:`
+  GUID, and `<category>weekly-digest</category>` so subscribers can
+  filter cadence as well as language. Daily `generate` auto-includes
+  the `digests/` dir when it exists.
+* macOS launchd: `scripts/install_launchd_macos.sh` now installs a
+  second LaunchAgent `com.leonardodon.cn-altdata-brief.weekly`
+  firing Friday 18:00 (an hour after the daily). The uninstaller
+  cleans up both.
+* `scripts/weekly_digest_now.sh` — manual / launchd wrapper that
+  mirrors `run_now.sh`: `uv sync` → `weekly-digest` →
+  `publish_now.sh` (opt-out with `RUN_PUBLISH_AFTER_DIGEST=0`).
+* Tests: 20 new tests under `tests/test_weekly_digest.py` (parsing,
+  theme detection, inflection detection, cumulative impact, empty
+  input, template render, CLI surface, launchd plist). 1 new
+  publisher test (`test_v09_digests_published_alongside_briefs`)
+  and 1 new RSS test (`test_render_feed_merges_weekly_digests`).
+  Total suite: 155 tests, all green.
+* `pyproject.toml` and `__init__.py` bumped to 0.9.0. New
+  `output/digests/` directory tracked in the layout.
+
+### Digest contract
+
+* Themes are filtered at `recurrence_threshold` (default 3 distinct
+  weekdays). Industries / metals below the bar are dropped.
+* Inflections are sign flips of `avg_impact` (政策) or `price_change_pct`
+  (库存) between consecutive non-zero observations.
+* "Forecast" bullets fire when a theme persists ≥4 days OR an
+  inflection's last flip date is Thu/Fri.
+* Missing days degrade gracefully — a 3-of-5 week still produces a
+  digest, with a `note` flagging the short-week situation.
+
+### What was deferred to v1.0
+
+* LLM-driven narrative paragraph above the deterministic sections
+  ("this week was characterized by …"). Today only the EN sibling
+  uses the LLM, and only as a translation.
+* Per-theme matplotlib sparklines embedded in the digest body.
+* Cross-week / month-over-month comparisons.
+
+---
+
 ## v0.8 — 2026-05-17
 
 **feat: v0.8 — bilingual EN translation via Claude API**
