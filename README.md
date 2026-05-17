@@ -3,7 +3,7 @@
 [![CI](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml/badge.svg)](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Version](https://img.shields.io/badge/version-v0.1.0-1f6feb)
+![Version](https://img.shields.io/badge/version-v0.2.0-1f6feb)
 ![Sources](https://img.shields.io/badge/sources-4%20projects-6f42c1)
 ![Cadence](https://img.shields.io/badge/cadence-T%2B0%20daily-2da44e)
 
@@ -26,9 +26,9 @@
 | 2 | **库存信号** | super-pricing-system / macro_hf | LME/SHFE 金属周价格变化 |
 | 3 | **ETF 资金流** | ETF 512400 liveSnapshot | 行情 / NAV / source-health 评级 |
 | 4 | **行业温度** | quant-trading-system | 行业 heat 排行 + 政策叠加 |
-| 5 | **本日观察** | 全源跨切 | 2-3 句确定性归纳，无 LLM |
+| 5 | **本日观察** | 全源跨切 | 3 句确定性归纳，无 LLM |
 
-合成全部基于**确定性规则**——v0.1 不接入 LLM，刻意"无聊但可靠"。这样新读者能复现，老读者能引用。
+合成全部基于**确定性规则**——v0.2 仍不接入 LLM，刻意"无聊但可靠"。这样新读者能复现，老读者能引用。
 
 ## 2. 为什么有它 / Why it exists
 
@@ -95,9 +95,10 @@
 
 | 版本 | 关键能力 | 状态 |
 |---|---|---|
-| **v0.1** | 4 个 cache 源接入 + 5 段式日报 + 4 张图 + GitHub Actions 模板 | ✅ 当前 |
-| **v0.2** | LLM 改写「本日观察」段，rule-based 输出作 ground truth | 计划中 |
-| **v0.5** | Substack 自动发布 + 邮件订阅入口 + RSS Feed | 计划中 |
+| **v0.1** | 4 个 cache 源接入 + 5 段式日报 + 4 张图 + GitHub Actions 模板 | ✅ 完成 |
+| **v0.2** | 3 句式「本日观察」+ 数据质量 `validate` + RSS feed + 发布前保护 | ✅ 当前 |
+| **v0.3** | LLM 改写「本日观察」段，rule-based 输出作 ground truth | 计划中 |
+| **v0.5** | Substack 自动发布 + 邮件订阅入口 | 计划中 |
 | **v1.0** | 付费墙上线 + Weekly Deep-Dive 实战 | 计划中 |
 
 ## 8. 快速开始 / Quickstart
@@ -106,12 +107,13 @@
 git clone https://github.com/Leonard-Don/cn-altdata-brief.git
 cd cn-altdata-brief
 uv sync
+uv run cn-altdata-brief validate
 uv run cn-altdata-brief generate
 ```
 
-生成结果落在 `output/briefs/YYYY-MM-DD.md` 与 `output/charts/YYYY-MM-DD/*.png`。
+生成结果落在 `output/briefs/YYYY-MM-DD.md`、`output/charts/YYYY-MM-DD/*.png` 与 `output/feed.xml`。
 
-若上游 4 个 cache 不在默认路径，可在 v0.2 之前**手动复制**到对应位置；之后会暴露 CLI flag。
+若上游 4 个 cache 不在默认路径，当前仍需**手动复制**到对应位置；后续版本会暴露 CLI flag。
 
 更深入：[docs/architecture.md](docs/architecture.md) · [docs/monetization_plan.md](docs/monetization_plan.md)
 

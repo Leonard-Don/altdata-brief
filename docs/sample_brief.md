@@ -56,7 +56,7 @@
 
 > 政策口径继续向 **新能源汽车** 倾斜（偏空，avg_impact=-0.388，mentions=94），是当前 policy_radar 的最强信号源。
 > 金属库存价格变化分歧度较低（spread < 0.5%），上下游分化暂未发酵。
-> ETF 512400 日内 NAV 上涨 3.85%，数据源评级 **良好**，可在尾盘前确认抢权或离场。
+> ETF 512400 日内 NAV 上涨 3.85%，数据源评级 **良好**，可在收盘后复核折溢价、申赎与数据源一致性。
 
 **Sources:** super-pricing-system::policy_radar.json · ETF-512400::liveSnapshot.json · quant-trading-system::policy_radar.json · index-inclusion-research::cma_hypothesis_verdicts.csv
 
@@ -68,6 +68,6 @@
 - 生成时间：`2026-05-17T01:48:52Z`
 - 数据日期：`2026-05-17`
 - 上游项目：super-pricing-system · quant-trading-system · index-inclusion-research · ETF 512400
-- 合成方式：rule-based deterministic synthesis（v0.1 暂不接入 LLM）
+- 合成方式：rule-based deterministic synthesis（v0.2 暂不接入 LLM）
 
 > Disclaimer：本简报不构成投资建议。所有信号来自公开数据源 + 自建 alt-data pipeline，仅供研究与教学讨论。

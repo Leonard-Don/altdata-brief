@@ -118,9 +118,14 @@ def test_observation_with_super_and_etf_produces_sentences(
     etf = ETF512400Adapter(snapshot_path=etf_512400_snapshot).fetch()
     result = synthesize_observation(sp, None, None, etf)
     assert result["available"] is True
-    assert 1 <= len(result["sentences"]) <= 3
-    joined = " ".join(result["sentences"])
-    assert "新能源汽车" in joined  # from policy skew
+    # v0.2 always emits exactly 3 sentences (framing / context / action).
+    assert len(result["sentences"]) == 3
+    framing, context, action = result["sentences"]
+    assert framing.startswith("今日核心信号是")
+    assert "近 7 日" in context
+    assert action.startswith("若该信号延续")
+    banned = ("抢权", "离场", "配对交易", "买入", "卖出", "加仓", "减仓", "投资建议")
+    assert not any(term in " ".join(result["sentences"]) for term in banned)
 
 
 def test_observation_picks_up_pap_changes(index_research_tables: Path) -> None:

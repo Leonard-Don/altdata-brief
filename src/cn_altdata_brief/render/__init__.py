@@ -2,10 +2,12 @@
 
 from cn_altdata_brief.render.charts import render_all_charts
 from cn_altdata_brief.render.markdown import render_brief_markdown
+from cn_altdata_brief.render.rss import render_feed
 from cn_altdata_brief.render.site import render_site_index
 
 __all__ = [
     "render_all_charts",
     "render_brief_markdown",
+    "render_feed",
     "render_site_index",
 ]

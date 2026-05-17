@@ -1,7 +1,7 @@
 name: Daily Brief
 
 # Beijing time 09:00 = 01:00 UTC; trading days Mon-Fri.
-# NOTE: This workflow is a TEMPLATE for v0.1. It will NOT run until the
+# NOTE: This workflow is a TEMPLATE for v0.2. It will NOT publish until the
 # repo has a remote configured and the upstream data caches are made
 # available to the runner (e.g. by uploading anonymized fixtures or
 # committing a digest job in each upstream project).
@@ -30,19 +30,26 @@ jobs:
 
       - run: uv sync
 
-      # In v0.1 the upstream caches live on the maintainer's laptop only.
+      # In v0.2 the upstream caches live on the maintainer's laptop only.
       # When publishing for real, replace this step with a real cache
       # download (S3 presigned URL, artifact transfer, etc.).
       - name: Stub — download upstream caches
+        id: cache
         run: |
-          echo "Upstream caches not wired up in v0.1; aborting."
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+          echo "Upstream caches not wired up in v0.2; skipping publish steps."
           echo "See docs/architecture.md for the planned wiring."
-          exit 0
+
+      - name: Validate upstream caches
+        if: steps.cache.outputs.ready == 'true'
+        run: uv run cn-altdata-brief validate --fail-on-warn
 
       - name: Generate brief
+        if: steps.cache.outputs.ready == 'true'
         run: uv run cn-altdata-brief generate --verbose
 
       - name: Publish to gh-pages
+        if: steps.cache.outputs.ready == 'true'
         env:
           GIT_USER_NAME: cn-altdata-brief-bot
           GIT_USER_EMAIL: bot@cn-altdata-brief.local
@@ -56,10 +63,11 @@ jobs:
           mkdir -p briefs
           cp output/briefs/${DATE}.md briefs/
           cp output/briefs/index.md briefs/index.md
+          cp output/feed.xml feed.xml
           if [ -d output/charts/${DATE} ]; then
             mkdir -p charts
             cp -R output/charts/${DATE} charts/
           fi
-          git add briefs charts
+          git add briefs charts feed.xml
           git commit -m "auto: brief ${DATE}" || echo "nothing to commit"
           git push origin gh-pages

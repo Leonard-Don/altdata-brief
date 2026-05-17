@@ -5,11 +5,14 @@ Usage::
     cn-altdata-brief generate              # generate today's brief
     cn-altdata-brief generate --date 2026-05-17
     cn-altdata-brief generate --output-dir /tmp/briefs
+    cn-altdata-brief validate              # run data-quality preconditions
+    cn-altdata-brief validate --fail-on-warn  # CI mode
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from datetime import UTC, datetime
@@ -20,12 +23,20 @@ from cn_altdata_brief import __version__
 from cn_altdata_brief.adapters import build_default_adapters
 from cn_altdata_brief.adapters.base import AdapterPayload, AdapterUnavailable
 from cn_altdata_brief.render import render_all_charts, render_brief_markdown, render_site_index
+from cn_altdata_brief.render.rss import render_feed
 from cn_altdata_brief.synthesis import (
     synthesize_etf_flow,
     synthesize_industry,
     synthesize_inventory,
     synthesize_observation,
     synthesize_policy,
+)
+from cn_altdata_brief.validate import (
+    EXIT_FAIL,
+    EXIT_OK,
+    EXIT_WARN,
+    run_all_checks,
+    summarize,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]  # src/cn_altdata_brief/cli.py -> project root
@@ -47,6 +58,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "generate":
         return _cmd_generate(args)
+    if args.command == "validate":
+        return _cmd_validate(args)
 
     parser.print_help()
     return 1
@@ -88,6 +101,33 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Skip writing the briefs index.md (useful in tests).",
     )
     gen.add_argument(
+        "--no-feed",
+        action="store_true",
+        help="Skip writing the RSS feed.xml (useful in tests / CI smoke).",
+    )
+    gen.add_argument(
+        "--site-url",
+        default="https://example.github.io/cn-altdata-brief",
+        help="Base URL used for RSS <link> elements (default: placeholder).",
+    )
+    gen.add_argument(
+        "-v", "--verbose", action="store_true", help="Verbose logging (subcommand-scoped alias)."
+    )
+
+    val = subparsers.add_parser(
+        "validate", help="Run data-quality preconditions before publishing."
+    )
+    val.add_argument(
+        "--fail-on-warn",
+        action="store_true",
+        help="Treat WARN-level issues as failures (exit 2). Use in CI.",
+    )
+    val.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit machine-readable JSON instead of the human summary.",
+    )
+    val.add_argument(
         "-v", "--verbose", action="store_true", help="Verbose logging (subcommand-scoped alias)."
     )
 
@@ -149,13 +189,54 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     if not args.no_index:
         render_site_index(briefs_dir)
 
+    feed_path: Path | None = None
+    if not args.no_feed:
+        feed_path = briefs_dir.parent / "feed.xml"
+        render_feed(briefs_dir=briefs_dir, feed_path=feed_path, site_url=args.site_url)
+
     available_count = sum(1 for s in sections.values() if s.get("available"))
+    feed_suffix = f" · feed={feed_path.name}" if feed_path else ""
     print(
         f"OK · wrote {brief_path} · {available_count}/5 sections available · "
-        f"{len(chart_paths)} charts · sources: "
+        f"{len(chart_paths)} charts{feed_suffix} · sources: "
         + ", ".join(sorted(p.source for p in payloads.values() if p is not None))
     )
     return 0
+
+
+def _cmd_validate(args: argparse.Namespace) -> int:
+    payloads: dict[str, AdapterPayload | None] = {}
+    for name, adapter in build_default_adapters().items():
+        try:
+            payloads[name] = adapter.fetch()
+        except AdapterUnavailable as exc:
+            logger.warning("validate: adapter %s unavailable: %s", name, exc)
+            payloads[name] = None
+
+    results = run_all_checks(payloads)
+    code = summarize(results, fail_on_warn=args.fail_on_warn)
+
+    if args.json:
+        out = {
+            "checks": [
+                {
+                    "name": r.name,
+                    "level": r.level,
+                    "message": r.message,
+                    "detail": r.detail,
+                }
+                for r in results
+            ],
+            "exit_code": code,
+            "fail_on_warn": bool(args.fail_on_warn),
+        }
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    else:
+        for r in results:
+            print(r.to_line())
+        verdict = {EXIT_OK: "ALL CHECKS PASSED", EXIT_WARN: "WARNINGS", EXIT_FAIL: "FAILURES"}[code]
+        print(f"--- {verdict} (exit={code}) ---")
+    return code
 
 
 def _synthesize(payloads: dict[str, AdapterPayload | None]) -> dict[str, Any]:

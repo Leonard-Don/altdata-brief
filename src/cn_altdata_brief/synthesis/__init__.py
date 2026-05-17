@@ -1,7 +1,7 @@
 """Deterministic synthesis of the brief's 5 sections.
 
 Each module returns a typed-ish dict ready for the Jinja template. The
-synthesis layer is intentionally **rule-based, no LLM** in v0.1 — boring
+synthesis layer is intentionally **rule-based, no LLM** in v0.2 — boring
 and reliable beats clever and surprising for a daily research brief.
 """
 
