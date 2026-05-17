@@ -44,3 +44,12 @@ jobs:
 
       - name: pytest
         run: uv run pytest -q
+
+      # v0.4 end-to-end smoke: rsyncs committed fixture summaries into a
+      # scratch dir simulating CN_ALTDATA_BRIEF_SOURCE_ROOT, then runs
+      # validate + generate under --source-mode public. Uses FIXTURE
+      # mode so the CI doesn't depend on access to the maintainer's
+      # upstream repos. The local `bash scripts/smoke_e2e.sh` runs the
+      # same script against REAL upstream data.
+      - name: smoke_e2e against committed fixtures
+        run: SMOKE_FIXTURE=1 bash scripts/smoke_e2e.sh

@@ -19,6 +19,7 @@ from cn_altdata_brief.adapters.base import (
     AdapterError,
     AdapterPayload,
     AdapterUnavailable,
+    SourceResolution,
 )
 from cn_altdata_brief.adapters.etf_512400 import ETF512400Adapter
 from cn_altdata_brief.adapters.index_research import IndexResearchAdapter
@@ -31,6 +32,7 @@ __all__ = [
     "AdapterError",
     "AdapterPayload",
     "AdapterUnavailable",
+    "SourceResolution",
     "ETF512400Adapter",
     "IndexResearchAdapter",
     "QuantTradingAdapter",
@@ -48,15 +50,15 @@ def build_default_adapters(
     sibling project layout on the maintainer's machine. Tests inject
     custom paths via the adapter constructors directly.
 
-    ``config`` is propagated to the two adapters that have a public-summary
-    code path (super-pricing and index-research). The other two adapters
-    (quant-trading and ETF 512400) are still cache-only at this revision
-    and inherit just ``allow_live`` from the env.
+    v0.4: all four adapters now share the same ``config`` / source-mode
+    contract. Quant-trading and ETF 512400 grew their public-summary
+    branches in v0.4 (``quant_summary.json`` and the existing
+    ``liveSnapshot.json`` aliased as a public artifact respectively).
     """
     cfg = config if config is not None else load_source_config()
     return {
         "super_pricing": SuperPricingAdapter(config=cfg),
-        "quant_trading": QuantTradingAdapter(),
+        "quant_trading": QuantTradingAdapter(config=cfg),
         "index_research": IndexResearchAdapter(config=cfg),
-        "etf_512400": ETF512400Adapter(),
+        "etf_512400": ETF512400Adapter(config=cfg),
     }

@@ -1,37 +1,122 @@
-"""Adapter for ``quant-trading-system`` — industry heat + policy signal cache."""
+"""Adapter for ``quant-trading-system`` — industry heat + policy radar.
+
+Resolution order (set per-call via :class:`SourceConfig`)
+--------------------------------------------------------
+
+1. **Live endpoint** — ``QUANT_TRADING_LIVE_API`` (or legacy
+   ``CN_ALTDATA_BRIEF_LIVE=1``) → hit
+   ``/api/v1/industry/industries/hot``.
+2. **Public summary** — ``<source-repo>/data/public/quant_summary.json``
+   if present. Sanitized + versioned; works in GitHub Actions.
+3. **Cache JSON** — ``<source-repo>/cache/alt_data/providers/policy_radar.json``.
+   Local-filesystem only; the v0.1/v0.2/v0.3 path.
+
+v0.4 schema (public summary v1) mapped to internal shape::
+
+    providers.policy_radar.top_industries           → derived industry heat list
+    providers.industry_heat.top_industries_by_score → preferred heat list
+    providers.etf_rotation                          → ETF rotation audit context
+    providers.paper_trading                         → opt-in paper-trading meta
+
+The internal expected shape (``data.industries``) is a sorted list of:
+``{industry, heat_score, policy_signal, policy_impact, mentions}``. We
+prefer ``industry_heat.top_industries_by_score`` when present, else fall
+back to deriving from ``policy_radar.top_industries`` (with the same
+mentions-normalized formula the cache path uses, so the brief reads the
+same whether public or cache wins).
+"""
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
 from cn_altdata_brief.adapters.base import AdapterBase, AdapterPayload, AdapterUnavailable
+from cn_altdata_brief.config import (
+    SOURCE_REPO_DIRS,
+    SourceConfig,
+    load_source_config,
+    public_summary_path,
+)
 
-DEFAULT_ROOT = Path("/Users/leonardodon/PycharmProjects/quant-trading-system")
+DEFAULT_ROOT = SOURCE_REPO_DIRS["quant_trading"]
 DEFAULT_CACHE_DIR = DEFAULT_ROOT / "cache" / "alt_data" / "providers"
+DEFAULT_PUBLIC_SUMMARY = public_summary_path("quant_trading")
 
 
 class QuantTradingAdapter(AdapterBase):
-    """Reads quant-trading's own copy of policy_radar.json + industry heat hints.
+    """Reads quant-trading's industry heat + policy_radar overlay.
 
-    For v0.1 the *industry heat* live endpoint is optional. When neither
-    a live response nor a heat-cache file is available, the adapter
-    derives a fallback ranking from the policy_radar industry_signals,
-    so downstream synthesis always has something to render.
+    Source preference is governed by :class:`SourceConfig` (env var
+    ``CN_ALTDATA_BRIEF_PREFERENCE`` or ``--source-mode``).
+
+    For v0.1–v0.3 only the cache path was implemented; v0.4 adds the
+    public summary path (``data/public/quant_summary.json``) so the
+    GitHub Actions workflow can read this source without checking out
+    the entire upstream repo.
+
+    When neither live nor public is available — or when neither contains
+    a ``heat`` ranking — the adapter derives a fallback ranking from
+    ``policy_radar.industry_signals`` so the brief always renders.
     """
 
     source_name = "quant-trading-system"
-    live_url = "http://localhost:8000/api/v1/industry/industries/hot"
+    live_url = os.environ.get(
+        "QUANT_TRADING_LIVE_API",
+        "http://localhost:8000/api/v1/industry/industries/hot",
+    )
 
     def __init__(
         self,
         *,
         cache_dir: Path | None = None,
+        public_summary: Path | None = None,
         allow_live: bool | None = None,
+        config: SourceConfig | None = None,
     ) -> None:
         super().__init__(allow_live=allow_live)
         self.cache_dir = Path(cache_dir) if cache_dir else DEFAULT_CACHE_DIR
+        self.public_summary = (
+            Path(public_summary) if public_summary else DEFAULT_PUBLIC_SUMMARY
+        )
+        preference = "cache_only" if cache_dir is not None and public_summary is None else None
+        self.config = config if config is not None else load_source_config(
+            preference=preference,
+            allow_live=allow_live,
+        )
 
+    # ------------------------------------------------------------------
+    # Resolution dispatch
+    # ------------------------------------------------------------------
+
+    def fetch(self) -> AdapterPayload:
+        """Override base: route through preference-aware resolution."""
+        cfg = self.config
+        # 1. Live mode (only when explicitly enabled).
+        if cfg.allow_live and self.live_url:
+            try:
+                return self.fetch_live()
+            except AdapterUnavailable:
+                pass  # fall through
+
+        # 2. Public summary, if preferred AND available.
+        if cfg.prefer_public and self.public_summary.exists():
+            try:
+                return self._load_from_public_summary()
+            except AdapterUnavailable:
+                pass
+
+        # 3. Cache JSON, unless caller forbids it.
+        if not cfg.allow_cache:
+            raise AdapterUnavailable(
+                f"quant-trading public summary missing at {self.public_summary} "
+                "and PUBLIC_SUMMARY_PREFERENCE=public_only forbids cache fallback"
+            )
+        return self.fetch_cached()
+
+    # ------------------------------------------------------------------
+    # Implementations
     # ------------------------------------------------------------------
 
     def fetch_cached(self) -> AdapterPayload:
@@ -89,9 +174,138 @@ class QuantTradingAdapter(AdapterBase):
             },
         )
 
+    def _load_from_public_summary(
+        self, *, summary_path: Path | None = None
+    ) -> AdapterPayload:
+        """Read the sanitized public summary and map to internal shape.
+
+        The expected schema (v1, ``schema_version`` key)::
+
+            {
+              "schema_version": 1,
+              "generated_at": "...",
+              "providers": {
+                "policy_radar": {
+                  "policy_count": int,
+                  "last_refresh_at": "...",
+                  "top_industries": [
+                    {"industry": str, "avg_impact": float,
+                     "mentions": int, "signal": str}, ...
+                  ]
+                },
+                "industry_heat": {
+                  "top_industries_by_score": [
+                    {"industry": str, "heat_score": float,
+                     "policy_signal": str, "policy_impact": float,
+                     "mentions": int}, ...
+                  ]
+                },
+                "etf_rotation": {
+                  "audit_count": int, "strategy_count": int,
+                  ...
+                },
+                "paper_trading": {...}   # optional
+              }
+            }
+
+        When ``industry_heat.top_industries_by_score`` is present we
+        prefer it (the upstream's real heat ranking). When only
+        ``policy_radar.top_industries`` exists, we derive heat the same
+        way the cache path does, so the brief reads identical bullets.
+        """
+        path = summary_path if summary_path is not None else self.public_summary
+        payload = self.read_json(path)
+        providers = payload.get("providers", {}) or {}
+
+        policy_block = providers.get("policy_radar", {}) or {}
+        heat_block = providers.get("industry_heat", {}) or {}
+        rotation_block = providers.get("etf_rotation", {}) or {}
+        paper_block = providers.get("paper_trading", {}) or {}
+
+        industries = _industries_from_public(policy_block, heat_block)
+
+        return AdapterPayload(
+            source=self.source_name,
+            fetched_at=self.now_iso(),
+            cache_path=path,
+            live=False,
+            data={
+                "industries": industries,
+                "policy_count": int(policy_block.get("policy_count", 0) or 0),
+                "policy_timestamp": policy_block.get("last_refresh_at"),
+                "etf_rotation": {
+                    "audit_count": int(rotation_block.get("audit_count", 0) or 0),
+                    "strategy_count": int(rotation_block.get("strategy_count", 0) or 0),
+                    "last_refresh_at": rotation_block.get("last_refresh_at"),
+                },
+                "paper_trading": paper_block or None,
+                "public_summary_path": str(path),
+                "cache_path": str(path),
+                "schema_version": payload.get("schema_version"),
+                "generated_at": payload.get("generated_at"),
+                "source_mode": "public",
+            },
+        )
+
+
+# ----------------------------------------------------------------------
+
+
+def _industries_from_public(
+    policy_block: dict[str, Any],
+    heat_block: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Prefer the upstream's explicit heat ranking when present.
+
+    The brief only needs ``industries`` sorted by heat_score desc; we
+    accept either an authoritative ``top_industries_by_score`` from
+    ``industry_heat`` or, as a fallback, derive heat from
+    ``policy_radar.top_industries`` using the same mentions-normalized
+    formula the cache path uses.
+    """
+    explicit = heat_block.get("top_industries_by_score") or []
+    if isinstance(explicit, list) and explicit:
+        rows: list[dict[str, Any]] = []
+        for row in explicit:
+            if not isinstance(row, dict):
+                continue
+            rows.append(
+                {
+                    "industry": str(row.get("industry") or row.get("name") or "未知"),
+                    "heat_score": float(row.get("heat_score", 0.0) or 0.0),
+                    "policy_signal": str(row.get("policy_signal", "neutral")),
+                    "policy_impact": float(row.get("policy_impact", 0.0) or 0.0),
+                    "mentions": int(row.get("mentions", 0) or 0),
+                }
+            )
+        rows.sort(key=lambda r: r["heat_score"], reverse=True)
+        if rows:
+            return rows
+
+    # Fallback: derive heat from policy_radar's top_industries.
+    top_industries = policy_block.get("top_industries") or []
+    if isinstance(top_industries, list) and top_industries:
+        as_dict = {
+            str(row.get("industry") or row.get("name") or f"row_{i}"): {
+                "avg_impact": row.get("avg_impact", 0.0),
+                "mentions": row.get("mentions", 0),
+                "signal": row.get("signal", "neutral"),
+            }
+            for i, row in enumerate(top_industries)
+            if isinstance(row, dict)
+        }
+        return _heat_from_industry_signals(as_dict)
+
+    # Last resort: the upstream may have shipped industry_signals as a
+    # dict (mirroring the cache shape).
+    signals = policy_block.get("industry_signals") or {}
+    if isinstance(signals, dict) and signals:
+        return _heat_from_industry_signals(signals)
+    return []
+
 
 def _industry_heat_from_policy(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """Derive a heat ranking from policy_radar industry_signals.
+    """Derive a heat ranking from policy_radar industry_signals (cache shape).
 
     Heat = mentions normalized to [0, 1] of the top mention count,
     blended with |avg_impact| as a secondary intensity proxy. This is
@@ -101,6 +315,13 @@ def _industry_heat_from_policy(payload: dict[str, Any]) -> list[dict[str, Any]]:
     industry_signals: dict[str, dict[str, Any]] = (
         payload.get("signal", {}).get("industry_signals", {}) or {}
     )
+    return _heat_from_industry_signals(industry_signals)
+
+
+def _heat_from_industry_signals(
+    industry_signals: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Shared heat formula used by both cache and public-summary fallback."""
     if not industry_signals:
         return []
     max_mentions = max(int(info.get("mentions", 0) or 0) for info in industry_signals.values())

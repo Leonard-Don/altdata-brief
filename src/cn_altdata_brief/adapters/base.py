@@ -6,7 +6,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -68,6 +68,40 @@ class AdapterPayload:
         return f"{self.source}::{self.cache_path.name}"
 
 
+@dataclass(slots=True)
+class SourceResolution:
+    """Resolution metadata produced by :meth:`AdapterBase.resolve_source`.
+
+    Returned by ``validate`` and surfaced in the CLI's per-adapter line so
+    operators can see which on-disk path each adapter actually consulted.
+
+    ``mode`` is one of ``"live"``, ``"public"``, ``"cache"``, or
+    ``"missing"`` (no path could be resolved).
+    ``path`` is the file path the adapter would read (or ``None`` for
+    live and ``missing``).
+    ``mtime_iso`` is the file mtime as ISO-8601 UTC, ``None`` when not
+    on disk.
+    ``available`` is True when fetch() should succeed.
+    """
+
+    source_name: str
+    mode: str
+    path: Path | None
+    mtime_iso: str | None
+    available: bool
+    note: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "source": self.source_name,
+            "mode": self.mode,
+            "path": str(self.path) if self.path is not None else None,
+            "mtime": self.mtime_iso,
+            "available": self.available,
+            "note": self.note,
+        }
+
+
 class AdapterBase:
     """Common helpers for all adapters.
 
@@ -106,11 +140,107 @@ class AdapterBase:
         """
         raise AdapterUnavailable(f"{self.source_name} has no live implementation")
 
+    # ------------------------------------------------------------------
+    # Resolution-only probe (no fetch / no normalization)
+    # ------------------------------------------------------------------
+
+    def resolve_source(self) -> SourceResolution:
+        """Inspect which source would be used without actually fetching.
+
+        v0.4 standardization: every adapter exposes this so the validate
+        command (and any future "doctor" output) can report a uniform
+        per-adapter line — *which* path the adapter resolved to, the
+        file's mtime, and whether fetch would succeed.
+
+        The default implementation handles the common case where the
+        adapter holds three attributes (``live_url``, ``public_summary``,
+        ``cache_dir`` or ``snapshot_path``). Subclasses with unusual
+        layouts may override; the dataclass shape is the contract.
+
+        This method MUST NOT raise — failures collapse to ``mode="missing"``
+        with ``available=False``. The validate layer renders that to the
+        user; raising would short-circuit the report for other adapters.
+        """
+        # Live mode wins when explicitly enabled. We don't probe HTTP here
+        # (would be slow); we just declare the intent.
+        cfg = getattr(self, "config", None)
+        allow_live = bool(getattr(cfg, "allow_live", self.allow_live)) and bool(self.live_url)
+        if allow_live:
+            return SourceResolution(
+                source_name=self.source_name,
+                mode="live",
+                path=None,
+                mtime_iso=None,
+                available=True,
+                note=f"live endpoint {self.live_url}",
+            )
+
+        prefer_public = cfg is None or getattr(cfg, "prefer_public", True)
+        allow_cache = cfg is None or getattr(cfg, "allow_cache", True)
+        public_path = getattr(self, "public_summary", None)
+        if prefer_public and isinstance(public_path, Path) and public_path.exists():
+            return SourceResolution(
+                source_name=self.source_name,
+                mode="public",
+                path=public_path,
+                mtime_iso=self._mtime_iso(public_path),
+                available=True,
+            )
+
+        cache_candidates: list[Path] = []
+        for attr in ("snapshot_path", "cache_dir", "table_dir"):
+            value = getattr(self, attr, None)
+            if isinstance(value, Path):
+                cache_candidates.append(value)
+        cache_present = any(
+            p.is_file() or (p.is_dir() and any(p.iterdir()))
+            for p in cache_candidates
+            if p.exists()
+        )
+        if cache_present and allow_cache:
+            existing = next(p for p in cache_candidates if p.exists())
+            return SourceResolution(
+                source_name=self.source_name,
+                mode="cache",
+                path=existing,
+                mtime_iso=self._mtime_iso(existing),
+                available=True,
+            )
+
+        # Nothing resolved — but if public summary exists yet caller
+        # forbade public (cache_only) AND we still have no cache, we land
+        # here. Use a hint when we know the public path exists.
+        note = None
+        if isinstance(public_path, Path) and public_path.exists() and not prefer_public:
+            note = "public summary exists but preference excludes it"
+        elif not prefer_public and not allow_cache:
+            note = "neither public nor cache permitted by current preference"
+        return SourceResolution(
+            source_name=self.source_name,
+            mode="missing",
+            path=None,
+            mtime_iso=None,
+            available=False,
+            note=note,
+        )
+
+    @staticmethod
+    def _mtime_iso(path: Path) -> str | None:
+        try:
+            ts = path.stat().st_mtime
+        except OSError:
+            return None
+        return (
+            datetime.fromtimestamp(ts, tz=UTC)
+            .replace(microsecond=0)
+            .isoformat()
+        )
+
     # -- shared helpers ------------------------------------------------------
 
     @staticmethod
     def now_iso() -> str:
-        return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+        return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
     @staticmethod
     def read_json(path: Path) -> dict[str, Any]:

@@ -24,13 +24,15 @@ from typing import Any
 
 from cn_altdata_brief.adapters.base import AdapterBase, AdapterPayload, AdapterUnavailable
 from cn_altdata_brief.config import (
+    SOURCE_REPO_DIRS,
     SourceConfig,
     load_source_config,
+    public_summary_path,
 )
 
-DEFAULT_ROOT = Path("/Users/leonardodon/PycharmProjects/super-pricing-system")
+DEFAULT_ROOT = SOURCE_REPO_DIRS["super_pricing"]
 DEFAULT_CACHE_DIR = DEFAULT_ROOT / "cache" / "alt_data" / "providers"
-DEFAULT_PUBLIC_SUMMARY = DEFAULT_ROOT / "data" / "public" / "alt_data_summary.json"
+DEFAULT_PUBLIC_SUMMARY = public_summary_path("super_pricing")
 
 
 class SuperPricingAdapter(AdapterBase):

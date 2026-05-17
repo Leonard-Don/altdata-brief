@@ -27,14 +27,16 @@ from typing import Any
 
 from cn_altdata_brief.adapters.base import AdapterBase, AdapterPayload, AdapterUnavailable
 from cn_altdata_brief.config import (
+    SOURCE_REPO_DIRS,
     SourceConfig,
     load_source_config,
+    public_summary_path,
 )
 
-DEFAULT_ROOT = Path("/Users/leonardodon/index-inclusion-research")
+DEFAULT_ROOT = SOURCE_REPO_DIRS["index_research"]
 DEFAULT_TABLE_DIR = DEFAULT_ROOT / "results" / "real_tables"
 DEFAULT_FIGURE_DIR = DEFAULT_ROOT / "results" / "figures"
-DEFAULT_PUBLIC_SUMMARY = DEFAULT_ROOT / "data" / "public" / "index_research_summary.json"
+DEFAULT_PUBLIC_SUMMARY = public_summary_path("index_research")
 
 
 class IndexResearchAdapter(AdapterBase):

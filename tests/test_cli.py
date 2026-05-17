@@ -31,7 +31,7 @@ def patched_default_paths(
     index_research_tables: Path,
     etf_512400_snapshot: Path,
 ) -> None:
-    """Point all adapter defaults at fixture dirs."""
+    """Point all adapter defaults at fixture dirs (v0.4: 4 adapters)."""
     monkeypatch.setattr(sp_mod, "DEFAULT_CACHE_DIR", super_pricing_cache)
     monkeypatch.setattr(
         sp_mod,
@@ -39,6 +39,11 @@ def patched_default_paths(
         super_pricing_cache / "missing_public_summary.json",
     )
     monkeypatch.setattr(qt_mod, "DEFAULT_CACHE_DIR", quant_trading_cache)
+    monkeypatch.setattr(
+        qt_mod,
+        "DEFAULT_PUBLIC_SUMMARY",
+        quant_trading_cache / "missing_public_summary.json",
+    )
     monkeypatch.setattr(ix_mod, "DEFAULT_TABLE_DIR", index_research_tables)
     monkeypatch.setattr(ix_mod, "DEFAULT_FIGURE_DIR", index_research_tables)
     monkeypatch.setattr(
@@ -47,6 +52,7 @@ def patched_default_paths(
         index_research_tables / "missing_public_summary.json",
     )
     monkeypatch.setattr(etf_mod, "DEFAULT_SNAPSHOT", etf_512400_snapshot)
+    monkeypatch.setattr(etf_mod, "DEFAULT_PUBLIC_SUMMARY", etf_512400_snapshot)
 
 
 def test_cli_generate_writes_brief(
