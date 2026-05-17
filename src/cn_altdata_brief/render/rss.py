@@ -9,20 +9,32 @@ v0.8: bilingual support. Each date that has both a CN brief
 **two** ``<item>`` elements — the EN one is title-prefixed ``[EN]`` and
 points at ``YYYY-MM-DD.en.html``. Subscribers can filter by GUID
 suffix (``:en``) if they only want one language.
+
+v0.10: enrichment — each ``<item>`` now carries an ``<enclosure>`` for
+the brief's OG image (RSS-standard podcast-style attachment, rendered
+as a thumbnail in modern readers), one or more ``<category>`` tags
+extracted from the brief's signal industries, and a CDATA-wrapped HTML
+``<description>`` containing the markdown preview. A parallel Atom 1.0
+feed is emitted as ``feed.atom`` for clients that prefer it over RSS
+2.0 (notably Inoreader, Feedly's newer parser, and most mail-based
+readers).
 """
 
 from __future__ import annotations
 
+import html
 import re
 from datetime import UTC, datetime
 from email.utils import format_datetime
 from pathlib import Path
+from uuid import uuid4
 from xml.etree import ElementTree as ET
 
 CHANNEL_TITLE = "CN AltData Brief"
 CHANNEL_DESCRIPTION = (
     "Daily research brief synthesizing alt-data signals from a portfolio of 6 quant projects."
 )
+DEFAULT_SITE_URL = "https://leonard-don.github.io/cn-altdata-brief"
 # Channel-level language stays zh-CN because Chinese is the ground
 # truth; per-item ``<language>`` elements override for EN entries.
 CHANNEL_LANGUAGE = "zh-CN"
@@ -48,10 +60,12 @@ def render_feed(
     *,
     briefs_dir: Path,
     feed_path: Path,
-    site_url: str = "https://example.github.io/cn-altdata-brief",
+    site_url: str = DEFAULT_SITE_URL,
     max_items: int = MAX_ITEMS,
     now: datetime | None = None,
     digests_dir: Path | None = None,
+    chart_dir: Path | None = None,
+    sections_by_date: dict[str, dict] | None = None,
 ) -> Path:
     """Scan ``briefs_dir`` for ``YYYY-MM-DD.md`` files and (over)write ``feed_path``.
 
@@ -66,9 +80,15 @@ def render_feed(
     feed_path.parent.mkdir(parents=True, exist_ok=True)
     now = now or datetime.now(UTC)
 
-    items = _collect_items(briefs_dir)
+    items = _collect_items(
+        briefs_dir, chart_dir=chart_dir, sections_by_date=sections_by_date, site_url=site_url
+    )
     if digests_dir is not None and digests_dir.exists():
-        items.extend(_collect_digest_items(digests_dir))
+        items.extend(
+            _collect_digest_items(
+                digests_dir, chart_dir=chart_dir, site_url=site_url
+            )
+        )
     items.sort(key=lambda it: it.get("sort_key", ""), reverse=True)
     items = items[:max_items]
 
@@ -81,6 +101,7 @@ def render_feed(
     ET.SubElement(channel, "generator").text = GENERATOR
     ET.SubElement(channel, "lastBuildDate").text = format_datetime(now)
 
+    cdata_blocks: dict[str, str] = {}
     for item in items:
         item_el = ET.SubElement(channel, "item")
         ET.SubElement(item_el, "title").text = item["title"]
@@ -101,7 +122,12 @@ def render_feed(
             f"{guid_prefix}:{item['date']}{guid_tail}"
         )
         ET.SubElement(item_el, "pubDate").text = item["pub_date"]
-        ET.SubElement(item_el, "description").text = item["description"]
+        desc_el = ET.SubElement(item_el, "description")
+        _set_cdata_text(
+            desc_el,
+            _escape_feed_html_text(item["description"]),
+            cdata_blocks,
+        )
         # Per-item language overrides the channel-level zh-CN default
         # so feed readers can filter on RFC 5646 language tags.
         ET.SubElement(item_el, "language").text = item.get("language", CHANNEL_LANGUAGE)
@@ -109,23 +135,49 @@ def render_feed(
             # Custom category so subscribers can filter weekly vs daily
             # without parsing the title prefix.
             ET.SubElement(item_el, "category").text = "weekly-digest"
+        # v0.10 — semantic categories from the brief's signal industries.
+        for cat in item.get("categories") or ():
+            ET.SubElement(item_el, "category").text = cat
+        # v0.10 — enclosure for the OG image. RSS 2.0 spec requires
+        # ``url``, ``length`` (size in bytes; ``0`` is tolerated when
+        # unknown — we don't HEAD the chart over the network), and
+        # ``type`` (MIME).
+        image_url = item.get("image_url")
+        if image_url:
+            ET.SubElement(
+                item_el,
+                "enclosure",
+                attrib={
+                    "url": image_url,
+                    "length": str(item.get("image_length", 0)),
+                    "type": "image/png",
+                },
+            )
 
-    ET.indent(rss, space="  ", level=0)  # human-readable pretty-print
-    xml_bytes = ET.tostring(rss, encoding="utf-8", xml_declaration=True)
-    feed_path.write_bytes(xml_bytes)
+    _write_xml_with_cdata(feed_path, rss, cdata_blocks)
     return feed_path
 
 
 # ----------------------------------------------------------------------
 
 
-def _collect_items(briefs_dir: Path) -> list[dict[str, str]]:
+def _collect_items(
+    briefs_dir: Path,
+    *,
+    chart_dir: Path | None = None,
+    sections_by_date: dict[str, dict] | None = None,
+    site_url: str = "",
+) -> list[dict[str, str]]:
     """Return brief descriptors sorted newest first.
 
     Iterates dated CN briefs first, then for each date appends the
     matching ``.en.md`` (and any future language siblings) so feed
     items are grouped per-date but always lead with the CN ground
     truth.
+
+    v0.10 — when ``chart_dir`` and ``sections_by_date`` are supplied,
+    each item is enriched with the OG image URL + signal categories
+    (driving the RSS ``<enclosure>`` / ``<category>`` extensions).
     """
     if not briefs_dir.exists():
         return []
@@ -141,21 +193,58 @@ def _collect_items(briefs_dir: Path) -> list[dict[str, str]]:
 
     items: list[dict[str, str]] = []
     for date_str in cn_dates:
+        date_chart_dir = (chart_dir / date_str) if chart_dir else None
+        date_sections = (sections_by_date or {}).get(date_str)
         for suffix, lang, title_prefix, desc_fallback in _LANGUAGE_VARIANTS:
             candidate = briefs_dir / f"{date_str}{suffix}.md"
             if not candidate.exists():
                 continue
-            items.append(
-                _build_item(
-                    date_str,
-                    candidate,
-                    file_suffix=suffix,
-                    language=lang,
-                    title_prefix=title_prefix,
-                    description_fallback=desc_fallback,
-                )
+            item = _build_item(
+                date_str,
+                candidate,
+                file_suffix=suffix,
+                language=lang,
+                title_prefix=title_prefix,
+                description_fallback=desc_fallback,
             )
+            _enrich_item(
+                item,
+                date_str,
+                chart_dir=date_chart_dir,
+                sections=date_sections,
+                site_url=site_url,
+            )
+            items.append(item)
     return items
+
+
+def _enrich_item(
+    item: dict[str, str],
+    date_str: str,
+    *,
+    chart_dir: Path | None,
+    sections: dict | None,
+    site_url: str,
+) -> None:
+    """v0.10 — attach OG image URL + categories to a feed item dict.
+
+    Imported lazily inside the function so this module stays importable
+    even before publish/og_metadata is available (defensive — avoids a
+    circular import if someone ever depends on render.rss from publish).
+    """
+    from cn_altdata_brief.publish.og_metadata import signal_categories_for
+    from cn_altdata_brief.render.og_image import chart_url_for, pick_og_chart
+
+    chart_key, chart_path = pick_og_chart(sections, chart_dir)
+    if site_url and chart_key and chart_path is not None and chart_path.exists():
+        item["image_url"] = chart_url_for(chart_key, date_str, site_url=site_url)
+        try:
+            item["image_length"] = chart_path.stat().st_size
+        except OSError:
+            item["image_length"] = 0
+    cats = signal_categories_for(sections)
+    if cats:
+        item["categories"] = cats
 
 
 def _build_item(
@@ -188,7 +277,12 @@ def _build_item(
     }
 
 
-def _collect_digest_items(digests_dir: Path) -> list[dict[str, str]]:
+def _collect_digest_items(
+    digests_dir: Path,
+    *,
+    chart_dir: Path | None = None,
+    site_url: str = "",
+) -> list[dict[str, str]]:
     """Return RSS items for every weekly digest under ``digests_dir``.
 
     The digest filename convention is ``<iso_year>-W<week>.md`` (and
@@ -291,11 +385,19 @@ def _extract_top_headline(brief_md: str) -> str | None:
 def _extract_first_paragraph(brief_md: str) -> str:
     """Return the first non-heading, non-meta paragraph as the RSS description.
 
-    Strips leading metadata blockquote (the auto-generated subtitle) and
-    section headings so the description starts with substantive text.
+    Strips leading YAML frontmatter (``---\\n…\\n---``), metadata
+    blockquote (the auto-generated subtitle), and section headings so
+    the description starts with substantive text.
     """
     skip_prefixes = ("#", ">", "---", "![", "**Sources:**", "{%", "<!--")
-    for raw in brief_md.splitlines():
+    lines = brief_md.splitlines()
+    start = 0
+    if lines and lines[0].strip() == "---":
+        for i, raw in enumerate(lines[1:], start=1):
+            if raw.strip() == "---":
+                start = i + 1
+                break
+    for raw in lines[start:]:
         line = raw.strip()
         if not line:
             continue
@@ -305,3 +407,227 @@ def _extract_first_paragraph(brief_md: str) -> str:
             return line.lstrip("- ").strip()
         return line
     return ""
+
+
+# ---------------------------------------------------------------------------
+# v0.10 — Atom 1.0 feed
+# ---------------------------------------------------------------------------
+
+
+ATOM_NS = "http://www.w3.org/2005/Atom"
+
+
+def render_atom_feed(
+    *,
+    briefs_dir: Path,
+    feed_path: Path,
+    site_url: str = DEFAULT_SITE_URL,
+    max_items: int = MAX_ITEMS,
+    now: datetime | None = None,
+    digests_dir: Path | None = None,
+    chart_dir: Path | None = None,
+    sections_by_date: dict[str, dict] | None = None,
+) -> Path:
+    """Emit an Atom 1.0 feed mirroring the RSS 2.0 contents.
+
+    Atom is more strictly specified than RSS — every entry needs a
+    globally-unique ``<id>`` (we reuse the RSS GUID), an ``<updated>``
+    timestamp, and one ``<author>``. Modern feed clients prefer Atom
+    when both are advertised because the schema is unambiguous.
+
+    Same parameter shape as :func:`render_feed` so the publisher can
+    invoke both side-by-side without rebuilding state.
+    """
+    feed_path.parent.mkdir(parents=True, exist_ok=True)
+    now = now or datetime.now(UTC)
+
+    items = _collect_items(
+        briefs_dir,
+        chart_dir=chart_dir,
+        sections_by_date=sections_by_date,
+        site_url=site_url,
+    )
+    if digests_dir is not None and digests_dir.exists():
+        items.extend(
+            _collect_digest_items(
+                digests_dir, chart_dir=chart_dir, site_url=site_url
+            )
+        )
+    items.sort(key=lambda it: it.get("sort_key", ""), reverse=True)
+    items = items[:max_items]
+
+    # Build the Atom XML using ElementTree with the Atom namespace as the
+    # default xmlns — declared on the root element so children don't
+    # need explicit prefixes.
+    ET.register_namespace("", ATOM_NS)
+    feed = ET.Element(f"{{{ATOM_NS}}}feed")
+    ET.SubElement(feed, f"{{{ATOM_NS}}}title").text = CHANNEL_TITLE
+    ET.SubElement(feed, f"{{{ATOM_NS}}}subtitle").text = CHANNEL_DESCRIPTION
+    ET.SubElement(
+        feed,
+        f"{{{ATOM_NS}}}link",
+        attrib={"href": site_url, "rel": "alternate", "type": "text/html"},
+    )
+    ET.SubElement(
+        feed,
+        f"{{{ATOM_NS}}}link",
+        attrib={
+            "href": f"{site_url.rstrip('/')}/feed.atom",
+            "rel": "self",
+            "type": "application/atom+xml",
+        },
+    )
+    ET.SubElement(feed, f"{{{ATOM_NS}}}id").text = (
+        f"{site_url.rstrip('/')}/feed.atom"
+    )
+    ET.SubElement(feed, f"{{{ATOM_NS}}}updated").text = _iso8601(now)
+    ET.SubElement(feed, f"{{{ATOM_NS}}}generator").text = GENERATOR
+
+    author = ET.SubElement(feed, f"{{{ATOM_NS}}}author")
+    ET.SubElement(author, f"{{{ATOM_NS}}}name").text = "cn-altdata-brief"
+    ET.SubElement(author, f"{{{ATOM_NS}}}uri").text = (
+        "https://github.com/Leonard-Don/cn-altdata-brief"
+    )
+
+    cdata_blocks: dict[str, str] = {}
+    for item in items:
+        entry = ET.SubElement(feed, f"{{{ATOM_NS}}}entry")
+        ET.SubElement(entry, f"{{{ATOM_NS}}}title").text = item["title"]
+
+        kind = item.get("kind", "brief")
+        suffix = item.get("file_suffix", "")
+        if kind == "digest":
+            link_path = f"digests/{item['date']}{suffix}.html"
+            guid_prefix = "cn-altdata-brief:digest"
+        else:
+            link_path = f"briefs/{item['date']}{suffix}.html"
+            guid_prefix = "cn-altdata-brief"
+        link_url = f"{site_url.rstrip('/')}/{link_path}"
+        ET.SubElement(
+            entry,
+            f"{{{ATOM_NS}}}link",
+            attrib={
+                "href": link_url,
+                "rel": "alternate",
+                "type": "text/html",
+            },
+        )
+
+        guid_lang = item.get("guid_lang") or ""
+        guid_tail = f":{guid_lang}" if guid_lang else ""
+        ET.SubElement(entry, f"{{{ATOM_NS}}}id").text = (
+            f"urn:{guid_prefix}:{item['date']}{guid_tail}"
+        )
+        # Atom requires ISO-8601 — we already have RFC 822 for RSS;
+        # synthesize a fresh ISO timestamp from the date.
+        ET.SubElement(entry, f"{{{ATOM_NS}}}updated").text = _atom_date_from_brief_date(
+            item["date"]
+        )
+        ET.SubElement(entry, f"{{{ATOM_NS}}}published").text = (
+            _atom_date_from_brief_date(item["date"])
+        )
+
+        summary_el = ET.SubElement(
+            entry, f"{{{ATOM_NS}}}summary", attrib={"type": "text"}
+        )
+        summary_el.text = item["description"]
+
+        content_el = ET.SubElement(
+            entry, f"{{{ATOM_NS}}}content", attrib={"type": "html"}
+        )
+        _set_cdata_text(
+            content_el,
+            f"<p>{_escape_feed_html_text(item['description'])}</p>",
+            cdata_blocks,
+        )
+
+        for cat in item.get("categories") or ():
+            ET.SubElement(
+                entry, f"{{{ATOM_NS}}}category", attrib={"term": cat}
+            )
+        if kind == "digest":
+            ET.SubElement(
+                entry,
+                f"{{{ATOM_NS}}}category",
+                attrib={"term": "weekly-digest"},
+            )
+
+        image_url = item.get("image_url")
+        if image_url:
+            ET.SubElement(
+                entry,
+                f"{{{ATOM_NS}}}link",
+                attrib={
+                    "rel": "enclosure",
+                    "href": image_url,
+                    "type": "image/png",
+                    "length": str(item.get("image_length", 0)),
+                },
+            )
+
+    _write_xml_with_cdata(feed_path, feed, cdata_blocks)
+    return feed_path
+
+
+def _set_cdata_text(
+    element: ET.Element,
+    body: str,
+    cdata_blocks: dict[str, str],
+) -> None:
+    """Attach CDATA content using an unguessable post-serialization token."""
+    token = f"CN_ALT_CDATA_{uuid4().hex}"
+    element.text = token
+    cdata_blocks[token] = body
+
+
+def _write_xml_with_cdata(
+    feed_path: Path,
+    root: ET.Element,
+    cdata_blocks: dict[str, str],
+) -> None:
+    ET.indent(root, space="  ", level=0)
+    xml_text = ET.tostring(root, encoding="utf-8", xml_declaration=True).decode(
+        "utf-8"
+    )
+    for token, body in cdata_blocks.items():
+        xml_text = xml_text.replace(token, _cdata_section(body))
+    feed_path.write_bytes(xml_text.encode("utf-8"))
+
+
+def _cdata_section(body: str) -> str:
+    return f"<![CDATA[{body.replace(']]>', ']]]]><![CDATA[>')}]]>"
+
+
+def _escape_feed_html_text(text: str) -> str:
+    escaped = html.escape(text or "", quote=False)
+    return escaped.replace("]]&gt;", "]]>")
+
+
+def _iso8601(dt: datetime) -> str:
+    """Format ``dt`` as ISO-8601 with a trailing ``Z`` for UTC."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _atom_date_from_brief_date(date_str: str) -> str:
+    """Return ISO-8601 09:00 UTC stamp for an Atom updated/published field.
+
+    Accepts both ``YYYY-MM-DD`` and ``YYYY-Www`` (digest) stems. For
+    digests we recover the Friday of that ISO week so the timestamp is
+    monotonic across the merged feed.
+    """
+    if _looks_like_date(date_str):
+        dt = datetime.strptime(date_str, "%Y-%m-%d").replace(hour=9, tzinfo=UTC)
+        return _iso8601(dt)
+    digest_re = re.compile(r"^(\d{4})-W(\d{2})$")
+    m = digest_re.fullmatch(date_str)
+    if m:
+        friday = _iso_week_friday(int(m.group(1)), int(m.group(2)))
+        dt = datetime.combine(friday, datetime.min.time()).replace(
+            hour=18, tzinfo=UTC
+        )
+        return _iso8601(dt)
+    # Last-resort fallback so we never emit an empty Atom timestamp
+    # (would fail schema validation in strict clients).
+    return _iso8601(datetime.now(UTC))

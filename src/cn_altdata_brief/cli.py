@@ -51,13 +51,17 @@ from cn_altdata_brief.publish.gh_pages import (
     PublishError,
     default_template_dir,
 )
+from cn_altdata_brief.publish.og_metadata import (
+    DEFAULT_SITE_URL,
+    generate_og_tags,
+)
 from cn_altdata_brief.render import (
     render_all_charts,
     render_brief_markdown,
     render_site_index,
     render_weekly_digest_markdown,
 )
-from cn_altdata_brief.render.rss import render_feed
+from cn_altdata_brief.render.rss import render_atom_feed, render_feed
 from cn_altdata_brief.synthesis import (
     synthesize_etf_flow,
     synthesize_industry,
@@ -90,6 +94,7 @@ DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "output"
 DEFAULT_BRIEFS_DIR = DEFAULT_OUTPUT_DIR / "briefs"
 DEFAULT_CHARTS_DIR = DEFAULT_OUTPUT_DIR / "charts"
 DEFAULT_FEED_PATH = DEFAULT_OUTPUT_DIR / "feed.xml"
+DEFAULT_ATOM_PATH = DEFAULT_OUTPUT_DIR / "feed.atom"
 DEFAULT_LLM_USAGE_LOG = DEFAULT_OUTPUT_DIR / "llm_usage.jsonl"
 DEFAULT_GH_PAGES_BRANCH = "gh-pages"
 DEFAULT_DIGESTS_DIR = DEFAULT_OUTPUT_DIR / "digests"
@@ -163,8 +168,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     gen.add_argument(
         "--site-url",
-        default="https://example.github.io/cn-altdata-brief",
-        help="Base URL used for RSS <link> elements (default: placeholder).",
+        default=DEFAULT_SITE_URL,
+        help=f"Base URL used for RSS/Atom and share metadata (default: {DEFAULT_SITE_URL}).",
     )
     gen.add_argument(
         "--source-mode",
@@ -260,6 +265,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--feed-path",
         default=str(DEFAULT_FEED_PATH),
         help=f"Optional RSS feed to publish (default: {DEFAULT_FEED_PATH}).",
+    )
+    pub.add_argument(
+        "--atom-path",
+        default=str(DEFAULT_ATOM_PATH),
+        help=(
+            "v0.10 — optional Atom 1.0 feed to publish alongside the RSS feed "
+            f"(default: {DEFAULT_ATOM_PATH})."
+        ),
     )
     pub.add_argument(
         "--digests-dir",
@@ -492,12 +505,48 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     if not args.no_feed:
         feed_path = briefs_dir.parent / "feed.xml"
         digests_dir = briefs_dir.parent / "digests"
+        # v0.10 — feed both RSS 2.0 and Atom 1.0 with OG enrichment.
+        sections_by_date = {date: sections}
+        chart_root = Path(args.charts_dir)
         render_feed(
             briefs_dir=briefs_dir,
             feed_path=feed_path,
             site_url=args.site_url,
             digests_dir=digests_dir if digests_dir.exists() else None,
+            chart_dir=chart_root,
+            sections_by_date=sections_by_date,
         )
+        atom_path = briefs_dir.parent / "feed.atom"
+        render_atom_feed(
+            briefs_dir=briefs_dir,
+            feed_path=atom_path,
+            site_url=args.site_url,
+            digests_dir=digests_dir if digests_dir.exists() else None,
+            chart_dir=chart_root,
+            sections_by_date=sections_by_date,
+        )
+
+    # v0.10 — emit OG frontmatter so the Jekyll layout picks up the
+    # right per-brief metadata. The publisher inlines this via Liquid
+    # ``page.og_*`` lookups (see _layouts/brief.html). We rewrite the
+    # CN brief's frontmatter rather than producing a sidecar so a
+    # single ``YYYY-MM-DD.md`` is the canonical artifact.
+    site_url = getattr(args, "site_url", None) or DEFAULT_SITE_URL
+    og_tags = generate_og_tags(
+        brief_path,
+        site_url=site_url,
+        sections=sections,
+        chart_dir=charts_root,
+    )
+    _inject_og_frontmatter(brief_path, og_tags)
+    for lang_path in translation_paths:
+        # Translation files share the same OG image / structure; only
+        # the locale changes. Keep the title/description in CN for now
+        # — translating them adds another LLM call we don't want on a
+        # critical-path commit.
+        en_tags = dict(og_tags)
+        en_tags["og:locale"] = "en_US"
+        _inject_og_frontmatter(lang_path, en_tags)
 
     available_count = sum(1 for s in sections.values() if s.get("available"))
     feed_suffix = f" · feed={feed_path.name}" if feed_path else ""
@@ -821,6 +870,77 @@ def _maybe_rephrase_observation(
     )
 
 
+def _inject_og_frontmatter(brief_path: Path, og_tags: dict[str, str]) -> None:
+    """Merge OG metadata into the YAML frontmatter of a brief markdown file.
+
+    The generator already writes a ``---`` block at the top of every
+    brief with deterministic synthesis metadata (date, llm_status,
+    observation_raw_hash, ...). We add a small set of ``og_*`` keys
+    that the Jekyll layout reads through ``page.og_*`` Liquid lookups,
+    keeping the canonical Markdown round-trippable.
+
+    Existing ``og_*`` keys are overwritten so re-running ``generate``
+    on the same date refreshes the metadata. Non-OG keys are
+    preserved verbatim.
+    """
+    if not brief_path.exists():
+        return
+    text = brief_path.read_text(encoding="utf-8")
+    new_keys = {
+        "og_title": og_tags.get("og:title", ""),
+        "og_description": og_tags.get("og:description", ""),
+        "og_url": og_tags.get("og:url", ""),
+        "og_image": og_tags.get("og:image", ""),
+        "og_locale": og_tags.get("og:locale", "zh_CN"),
+        "og_section": og_tags.get("article:section", ""),
+        "twitter_handle": og_tags.get("twitter:site", ""),
+        "article_published": og_tags.get("article:published_time", ""),
+        # The Jekyll layout uses 'layout: brief' for per-brief pages;
+        # we set this explicitly so a brief opened directly (without
+        # going through the publisher's overlay) still picks up the
+        # OG-aware layout.
+        "layout": "brief",
+    }
+    lines = text.splitlines()
+    if lines and lines[0].strip() == "---":
+        end_idx = None
+        for i, ln in enumerate(lines[1:], start=1):
+            if ln.strip() == "---":
+                end_idx = i
+                break
+        if end_idx is not None:
+            existing = lines[1:end_idx]
+            # Strip pre-existing og_* / layout keys; we'll re-add ours.
+            kept = []
+            stripped_keys = set(new_keys.keys())
+            for ln in existing:
+                key = ln.split(":", 1)[0].strip() if ":" in ln else ""
+                if key in stripped_keys:
+                    continue
+                kept.append(ln)
+            new_lines = ["---", *kept]
+            for k, v in new_keys.items():
+                new_lines.append(f"{k}: {_yaml_string_scalar(v)}")
+            new_lines.append("---")
+            new_lines.extend(lines[end_idx + 1 :])
+            brief_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+            return
+    # No frontmatter — prepend one.
+    head_lines = ["---"]
+    for k, v in new_keys.items():
+        head_lines.append(f"{k}: {_yaml_string_scalar(v)}")
+    head_lines.append("---")
+    brief_path.write_text(
+        "\n".join(head_lines) + "\n" + text, encoding="utf-8"
+    )
+
+
+def _yaml_string_scalar(value: object) -> str:
+    """Serialize a frontmatter value as a YAML-safe quoted string scalar."""
+    text = "" if value is None else str(value)
+    return json.dumps(text, ensure_ascii=False)
+
+
 def _refresh_latest_symlink(briefs_dir: Path, brief_path: Path) -> None:
     """Atomically refresh ``briefs_dir/latest.md`` to point at ``brief_path``.
 
@@ -867,6 +987,7 @@ def _cmd_publish(args: argparse.Namespace) -> int:
         brief_dir=Path(args.briefs_dir),
         chart_dir=Path(args.charts_dir),
         feed_path=Path(args.feed_path),
+        atom_path=Path(args.atom_path) if getattr(args, "atom_path", None) else None,
         template_dir=Path(args.template_dir),
         repo_root=Path(args.repo_root),
         gh_pages_branch=args.gh_pages_branch,
