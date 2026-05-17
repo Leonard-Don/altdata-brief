@@ -1,0 +1,51 @@
+# GitHub Pages configuration for cn-altdata-brief.
+#
+# This file is copied verbatim into the root of the gh-pages branch by
+# `cn-altdata-brief publish`. Edit it here, NOT on the published branch
+# (which the publisher rewrites on every run).
+
+title: CN AltData Brief
+description: >-
+  Daily, deterministic research brief over China-equity alt-data —
+  synthesized from 6 quant projects. Updated every trading day.
+author: Leonard-Don
+lang: zh-CN
+
+# `minima` ships with the github-pages gem, so users don't need a
+# Gemfile to render locally. Swap for `just-the-docs` later once the
+# archive grows past ~50 briefs and search becomes valuable.
+theme: minima
+
+# Markdown rendering — GFM tables (used by index.md) need kramdown.
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+
+# Treat anything under briefs/ as a top-level page (no permalink
+# rewrite). This keeps the YYYY-MM-DD.md filenames intact, so the RSS
+# feed's <link> elements continue to resolve.
+include:
+  - briefs
+  - charts
+  - feed.xml
+
+# Files the publisher emits which Jekyll should not auto-process.
+exclude:
+  - README.md
+  - .gitignore
+
+# Plugins enabled by GitHub Pages by default — listed here for
+# clarity. The site builds without any extras.
+plugins:
+  - jekyll-feed
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
+# Don't surface placeholder posts.
+defaults:
+  - scope:
+      path: briefs
+      type: pages
+    values:
+      layout: brief

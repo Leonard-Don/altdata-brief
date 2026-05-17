@@ -3,7 +3,7 @@
 [![CI](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml/badge.svg)](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Version](https://img.shields.io/badge/version-v0.5.0-1f6feb)
+![Version](https://img.shields.io/badge/version-v0.6.0-1f6feb)
 ![Sources](https://img.shields.io/badge/sources-4%2F4%20public-2da44e)
 ![Cadence](https://img.shields.io/badge/cadence-T%2B0%20daily-2da44e)
 ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-%F0%9F%9F%A2%20ready-2da44e)
@@ -100,8 +100,9 @@
 | **v0.2** | 3 句式「本日观察」+ 数据质量 `validate` + RSS feed + 发布前保护 | ✅ 完成 |
 | **v0.3** | `data/public/*_summary.json` 优先 + `--source-mode` + GitHub Actions 通路 | ✅ 完成 |
 | **v0.4** | **4/4 adapter 全部接 public summary + 本地 e2e 烟测脚本 + CI fixture 通路 + `resolve_source()`** | ✅ 当前 |
-| **v0.5** | **macOS launchd 本地每日运行 + 稳定 `latest.md` 符号链接 + 失败 macOS 通知** | ✅ 当前 |
-| **v0.6** | Substack 自动发布 + 邮件订阅入口 + LLM 改写「本日观察」段 | 计划中 |
+| **v0.5** | macOS launchd 本地每日运行 + 稳定 `latest.md` 符号链接 + 失败 macOS 通知 | ✅ 完成 |
+| **v0.6** | **gh-pages 自动发布管道 + Jekyll 主题 + 公共 URL** | ✅ 当前 |
+| **v0.7** | Substack 自动发布 + 邮件订阅入口 + LLM 改写「本日观察」段 | 计划中 |
 | **v1.0** | 付费墙上线 + Weekly Deep-Dive 实战 | 计划中 |
 
 ## 8. 快速开始 / Quickstart
@@ -196,6 +197,33 @@ tail -f output/launchd_runs.log
 ```
 
 更深入：[docs/architecture.md](docs/architecture.md) · [docs/monetization_plan.md](docs/monetization_plan.md)
+
+### v0.6 — gh-pages 自动发布 / Public live site
+
+v0.6 起，每次 generate 之后会自动把 brief + charts + RSS feed 推到 `gh-pages` 分支，由 GitHub Pages 渲染成静态站点：
+
+> **Live URL**: [https://leonard-don.github.io/cn-altdata-brief/](https://leonard-don.github.io/cn-altdata-brief/) _(占位 / placeholder — once you run `gh repo create` + enable Pages, this is where readers land)_
+
+```bash
+# 手动跑一次 publish（默认 push 到 origin/gh-pages）
+uv run cn-altdata-brief publish
+
+# 仅看会发生什么，不动 git
+uv run cn-altdata-brief publish --dry-run
+
+# 重发某天的旧 brief
+uv run cn-altdata-brief publish --date 2026-05-16
+
+# 只本地 commit，不 push（飞机模式）
+uv run cn-altdata-brief publish --no-push
+
+# launchd 链式 publish 默认开启；临时关闭：
+RUN_PUBLISH_AFTER_GENERATE=0 bash scripts/run_now.sh
+```
+
+整套设置（含 `gh repo create` + GitHub Pages source 切换）见 [docs/PUBLISHING.md](docs/PUBLISHING.md)。
+
+`gh-pages` 分支是 orphan 历史，与 `main` 完全独立——主仓库的提交历史不会被 publish 污染。`gh-pages-template/` 下的 Jekyll 模板每次 publish 会覆盖到分支上，所以站点样式只需在 `main` 上改一次。
 
 ## 9. License + Contact
 
