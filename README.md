@@ -3,7 +3,7 @@
 [![CI](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml/badge.svg)](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Version](https://img.shields.io/badge/version-v0.9.0-1f6feb)
+![Version](https://img.shields.io/badge/version-v0.11.0-1f6feb)
 ![Languages](https://img.shields.io/badge/languages-CN%20%2B%20EN-2da44e)
 ![Sources](https://img.shields.io/badge/sources-4%2F4%20public-2da44e)
 ![Cadence](https://img.shields.io/badge/cadence-T%2B0%20daily-2da44e)
@@ -105,7 +105,8 @@
 | **v0.6** | **gh-pages 自动发布管道 + Jekyll 主题 + 公共 URL** | ✅ 当前 |
 | **v0.7** | 本地显式开启的 LLM 改写「本日观察」段；原文保留 + usage 记录 + 校验失败回退 | ✅ 完成 |
 | **v0.8** | **双语 CN+EN 简报（LLM 翻译 + 数字/行业名校验回退）** | ✅ 完成 |
-| **v0.9** | **每周五 18:00 本周回顾（aggregate 5 份日报为 themes/inflections/forecast）** | ✅ 当前 |
+| **v0.9** | 每周五 18:00 本周回顾（aggregate 5 份日报为 themes/inflections/forecast） | ✅ 完成 |
+| **v0.11** | **每月 1 日 17:00 上月回顾（aggregate ~20 份日报 + 4 份周报为 sustained themes / reversals / ETF MoM）** | ✅ 当前 |
 | **v1.0** | 付费墙上线 + Weekly Deep-Dive 实战 | 计划中 |
 
 ## 8. 快速开始 / Quickstart
@@ -319,6 +320,60 @@ launchctl list | grep cn-altdata
 `scripts/weekly_digest_now.sh` 跑完后默认会链式调用 `scripts/publish_now.sh`，所以新 digest 周五就会出现在公共 URL。临时关闭：`RUN_PUBLISH_AFTER_DIGEST=0`。
 
 更深入的 publishing 流程见 [docs/PUBLISHING.md §8](docs/PUBLISHING.md)。
+
+### v0.11 — 上月回顾 / Monthly digest (1st-of-month cadence)
+
+v0.11 闭环了 cadence trilogy：**daily（每个交易日）→ weekly（每周五）→ monthly（每月 1 日）**。月度回顾不是预测，是策略级回望——把上月所有 daily + weekly 揉成一份「持续/反转/累计」视角：
+
+```bash
+# 默认聚合 LAST month（与 1st-of-next-month launchd 节奏一致）
+uv run cn-altdata-brief monthly-digest
+
+# 显式指定月份（YYYY-MM 或 YYYY-MM-DD 皆可）
+uv run cn-altdata-brief monthly-digest --month-of 2026-04
+uv run cn-altdata-brief monthly-digest --month-of 2026-04-15
+
+# 提高 sustained 门槛（默认 12 天）
+uv run cn-altdata-brief monthly-digest --sustained-threshold 15
+
+# 顺便生成英文版（复用 v0.8 翻译基础设施）
+uv run cn-altdata-brief monthly-digest --with-llm
+```
+
+数字落地：
+
+- 文件位置：`output/digests/<YYYY-MM>.md`（如 `2026-04.md`），与 weekly digests 共用 `digests/` 目录；文件名形态（`2026-04` vs `2026-W18`）区分 cadence
+- 月度合成内容：
+  1. **月度核心主题** — 在 ≥12 天里持续出现的行业 / 金属（多周维度）
+  2. **信号反转事件** — 月内每一次正负号翻转（不仅是最后一次）+ `flips_in_month` 排序
+  3. **行业累计影响排行** — top 10
+  4. **ETF 资金流月度变化** — 首日 / 末日 / 月内高 / 月内低
+  5. **下月观察** — 持续到月末最后一周的主题（≥3 次）会被标为"下月继续跟踪"
+- gh-pages 首页现在有 **三张表**：daily / weekly / monthly
+- RSS / Atom feeds 包含 monthly items：`[Monthly]` 前缀 + `:monthly` GUID 后缀 + `<category>monthly-digest</category>`
+
+#### 月初自动化
+
+```bash
+# 一键安装三个 launchd job (Mon-Fri 17:00 daily + Fri 18:00 weekly + Day 1 17:00 monthly)
+bash scripts/install_launchd_macos.sh
+
+# 不等 1 号，手动验证整套流程：
+bash scripts/monthly_digest_now.sh
+
+# 卸载三个 job：
+bash scripts/uninstall_launchd_macos.sh
+
+# 查看任务是否在列：
+launchctl list | grep cn-altdata
+#  com.leonardodon.cn-altdata-brief
+#  com.leonardodon.cn-altdata-brief.weekly
+#  com.leonardodon.cn-altdata-brief.monthly
+```
+
+`scripts/monthly_digest_now.sh` 在每月 1 日 17:00 跑；如果 1 号正好是周六/周日，wrapper 会自动把 run 延后到下周一（`MONTHLY_DEFER_WEEKENDS=0` 可关闭）。完成后默认链式调用 `scripts/publish_now.sh`，所以月度回顾月初就会出现在公共 URL。
+
+更深入：[docs/PUBLISHING.md §9](docs/PUBLISHING.md)。
 
 ## 9. License + Contact
 

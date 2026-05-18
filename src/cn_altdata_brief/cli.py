@@ -13,6 +13,9 @@ Usage::
     cn-altdata-brief weekly-digest         # (v0.9) aggregate this week's briefs
     cn-altdata-brief weekly-digest --week-of 2026-05-17
     cn-altdata-brief weekly-digest --with-llm  # also emit EN translation
+    cn-altdata-brief monthly-digest        # (v0.11) aggregate last month
+    cn-altdata-brief monthly-digest --month-of 2026-04
+    cn-altdata-brief monthly-digest --with-llm  # also emit EN translation
 """
 
 from __future__ import annotations
@@ -34,9 +37,14 @@ from cn_altdata_brief.config import (
     source_mode_to_kwargs,
 )
 from cn_altdata_brief.digest import (
+    collect_brief_paths_for_month,
     collect_brief_paths_for_week,
+    collect_digest_paths_for_month,
+    compose_monthly_digest,
     compose_weekly_digest,
     iso_week_bounds,
+    month_bounds,
+    previous_month,
 )
 from cn_altdata_brief.llm import (
     DEFAULT_LLM_MODEL,
@@ -58,6 +66,7 @@ from cn_altdata_brief.publish.og_metadata import (
 from cn_altdata_brief.render import (
     render_all_charts,
     render_brief_markdown,
+    render_monthly_digest_markdown,
     render_site_index,
     render_weekly_digest_markdown,
 )
@@ -121,6 +130,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_llm_usage(args)
     if args.command == "weekly-digest":
         return _cmd_weekly_digest(args)
+    if args.command == "monthly-digest":
+        return _cmd_monthly_digest(args)
 
     parser.print_help()
     return 1
@@ -371,6 +382,71 @@ def _build_parser() -> argparse.ArgumentParser:
         help=f"Append-only JSONL usage log for --with-llm (default: {DEFAULT_LLM_USAGE_LOG}).",
     )
     digest.add_argument(
+        "-v", "--verbose", action="store_true", help="Verbose logging (subcommand-scoped alias)."
+    )
+
+    monthly = subparsers.add_parser(
+        "monthly-digest",
+        help="(v0.11) Aggregate the past month's daily briefs + weekly digests into one monthly digest.",
+    )
+    monthly.add_argument(
+        "--month-of",
+        default=None,
+        help=(
+            "Month to aggregate, either ``YYYY-MM`` (e.g. 2026-04) or a "
+            "YYYY-MM-DD date inside the target month. Defaults to LAST "
+            "month — the typical 'first business day of next month' run."
+        ),
+    )
+    monthly.add_argument(
+        "--briefs-dir",
+        default=str(DEFAULT_BRIEFS_DIR),
+        help=f"Daily briefs source directory (default: {DEFAULT_BRIEFS_DIR}).",
+    )
+    monthly.add_argument(
+        "--digests-dir",
+        default=str(DEFAULT_DIGESTS_DIR),
+        help=(
+            "Weekly digests directory (also where the monthly digest is "
+            f"written by default; default: {DEFAULT_DIGESTS_DIR})."
+        ),
+    )
+    monthly.add_argument(
+        "--output",
+        default=None,
+        help=(
+            "Explicit output path. When omitted, the digest is written to "
+            "<digests-dir>/<YYYY-MM>.md."
+        ),
+    )
+    monthly.add_argument(
+        "--sustained-threshold",
+        type=int,
+        default=12,
+        help=(
+            "Minimum number of distinct days a name must appear before "
+            "it qualifies as a sustained monthly theme (default: 12)."
+        ),
+    )
+    monthly.add_argument(
+        "--with-llm",
+        action="store_true",
+        help=(
+            "Also emit an English sibling (<base>.en.md) via the v0.8 "
+            "translator. Falls back to CN with a banner on failure."
+        ),
+    )
+    monthly.add_argument(
+        "--llm-model",
+        default=DEFAULT_LLM_MODEL,
+        help=f"Anthropic model used with --with-llm (default: {DEFAULT_LLM_MODEL}).",
+    )
+    monthly.add_argument(
+        "--llm-usage-log",
+        default=str(DEFAULT_LLM_USAGE_LOG),
+        help=f"Append-only JSONL usage log for --with-llm (default: {DEFAULT_LLM_USAGE_LOG}).",
+    )
+    monthly.add_argument(
         "-v", "--verbose", action="store_true", help="Verbose logging (subcommand-scoped alias)."
     )
 
@@ -1112,6 +1188,122 @@ def _produce_digest_translation(
         result,
         args=args,
         date=f"{iso_year}-W{week_num:02d}",
+        language="EN",
+    )
+    return en_path, result.status
+
+
+def _cmd_monthly_digest(args: argparse.Namespace) -> int:
+    """v0.11 — aggregate a calendar month's dailies + weeklies into one monthly digest."""
+    briefs_dir = Path(args.briefs_dir)
+    digests_dir = Path(args.digests_dir)
+    digests_dir.mkdir(parents=True, exist_ok=True)
+
+    anchor = _resolve_month_anchor(args)
+    if anchor is None:
+        return 2  # error already printed
+    first, last, label = month_bounds(anchor)
+
+    brief_paths = collect_brief_paths_for_month(briefs_dir, anchor)
+    digest_paths = collect_digest_paths_for_month(digests_dir, anchor)
+    if not brief_paths:
+        print(
+            f"WARN: no daily briefs found in {briefs_dir} for month "
+            f"{label} ({first}→{last}); writing degraded monthly digest.",
+            file=sys.stderr,
+        )
+
+    monthly = compose_monthly_digest(
+        brief_paths,
+        digest_paths,
+        anchor=anchor,
+        sustained_threshold=max(1, int(args.sustained_threshold)),
+        now=datetime.now(UTC),
+    )
+    markdown = render_monthly_digest_markdown(context=monthly.render_context())
+
+    default_filename = f"{label}.md"
+    output_path = Path(args.output) if args.output else (digests_dir / default_filename)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(markdown, encoding="utf-8")
+
+    en_path: Path | None = None
+    en_status: str | None = None
+    if getattr(args, "with_llm", False):
+        en_path, en_status = _produce_monthly_translation(
+            digest_path=output_path,
+            month_label=label,
+            args=args,
+        )
+
+    parts = [
+        f"OK · wrote {output_path}",
+        f"month={label}",
+        f"briefs={monthly.brief_count}",
+        f"weeklies={monthly.digest_count}",
+        f"sustained_themes={len(monthly.sustained_themes)}",
+        f"reversals={len(monthly.reversal_events)}",
+    ]
+    if en_path is not None:
+        parts.append(f"en={en_path.name}({en_status})")
+    print(" · ".join(parts))
+    return 0
+
+
+def _resolve_month_anchor(args: argparse.Namespace):
+    """Turn ``--month-of`` (or its absence) into a concrete date inside the target month.
+
+    Accepts ``YYYY-MM`` for convenience and ``YYYY-MM-DD`` for symmetry
+    with ``weekly-digest --week-of``. When omitted, defaults to LAST
+    month — matching the "first business day of next month" cron
+    contract. Returns ``None`` on parse failure after printing a
+    diagnostic; the caller turns that into exit code 2.
+    """
+    from datetime import date as date_cls
+
+    raw = getattr(args, "month_of", None)
+    if raw is None:
+        today = datetime.now(UTC).date()
+        return previous_month(today)
+    raw = str(raw).strip()
+    if len(raw) == 7 and raw[4] == "-":
+        try:
+            year = int(raw[:4])
+            month = int(raw[5:])
+            return date_cls(year, month, 1)
+        except ValueError:
+            pass
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        print(
+            f"ERROR: --month-of must be YYYY-MM or YYYY-MM-DD, got {raw!r}",
+            file=sys.stderr,
+        )
+        return None
+
+
+def _produce_monthly_translation(
+    *,
+    digest_path: Path,
+    month_label: str,
+    args: argparse.Namespace,
+) -> tuple[Path, str]:
+    """Translate a finished monthly digest into English using v0.8 infra.
+
+    Output sits next to the CN digest as ``<YYYY-MM>.en.md``. Failures
+    still write a file (banner contract) so the gh-pages publisher can
+    always link to it.
+    """
+    source_md = digest_path.read_text(encoding="utf-8")
+    model = str(getattr(args, "llm_model", DEFAULT_LLM_MODEL))
+    result = translate_brief(source_md, target_language="en", model=model)
+    en_path = digest_path.with_suffix(".en.md")
+    en_path.write_text(result.translated_md, encoding="utf-8")
+    _log_translation_usage(
+        result,
+        args=args,
+        date=month_label,
         language="EN",
     )
     return en_path, result.status

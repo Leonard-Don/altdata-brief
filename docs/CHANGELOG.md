@@ -1,5 +1,69 @@
 # Changelog
 
+## v0.11 — 2026-05-18
+
+**feat: v0.11 — monthly digest (1st business day cadence)**
+
+* `src/cn_altdata_brief/digest/monthly.py` — new
+  `compose_monthly_digest()` entry point and `MonthlyDigest` /
+  `SustainedTheme` / `ReversalEvent` / `ETFMonthlySummary` /
+  `WeeklyDigestSummary` dataclasses. Aggregates a full calendar
+  month's daily briefs (~20) + intersecting weekly digests (~4) into
+  a single deterministic monthly digest. **No LLM in the core
+  synthesis** — the digest body is fully reproducible from the
+  on-disk briefs + weekly digests.
+* `templates/monthly_digest.md.j2` — new Jinja template with sections
+  本月核心信号 / 月度核心主题 / 信号反转事件 / 行业累计影响排行 / ETF 资金流月度变化 /
+  下月观察 + footer tables for both daily briefs and weekly digests
+  that contributed.
+* CLI: new `monthly-digest` subcommand with `--month-of` (accepts
+  both `YYYY-MM` and `YYYY-MM-DD`), `--briefs-dir`, `--digests-dir`,
+  `--output`, `--sustained-threshold`, `--with-llm`, `--llm-model`,
+  `--llm-usage-log`. Default output path is
+  `output/digests/<YYYY-MM>.md`. Default month is LAST month so the
+  1st-of-month run produces "上月回顾".
+* GitHub Pages publisher: now copies monthly digests to
+  `gh-pages:digests/` alongside weekly digests (same directory,
+  filename shape disambiguates: `2026-04` for monthly,
+  `2026-W18` for weekly). Index page renders **three** tables:
+  daily briefs, weekly digests, **monthly digests**.
+* RSS / Atom feeds: monthly digest items use a `[Monthly]` title
+  prefix, `cn-altdata-brief:monthly:` GUID prefix, and
+  `<category>monthly-digest</category>` (RSS) /
+  `<category term="monthly-digest"/>` (Atom). Pub date pinned to the
+  last day of the month at 17:00 UTC so the merged feed orders
+  daily / weekly / monthly chronologically.
+* macOS launchd: `scripts/install_launchd_macos.sh` now installs a
+  **third** LaunchAgent `com.leonardodon.cn-altdata-brief.monthly`
+  firing every `Day=1` at 17:00. The uninstaller cleans up all
+  three.
+* `scripts/monthly_digest_now.sh` — manual / launchd wrapper that
+  mirrors `weekly_digest_now.sh` (`uv sync` → `monthly-digest` →
+  chained `publish_now.sh`). When the 1st is Sat/Sun the wrapper
+  defers to the next Monday (override with
+  `MONTHLY_DEFER_WEEKENDS=0`).
+* Tests: 20 new tests under `tests/test_monthly_digest.py` (date
+  helpers, path collection, parsing, sustained-theme detection,
+  reversal events with flip counts, cumulative impact aggregation,
+  ETF high/low, carry-forward forecast, empty input, CLI surface,
+  launchd plist). Total suite: **195 tests, all green**.
+* `pyproject.toml` and `__init__.py` bumped to 0.11.0.
+
+### Monthly digest contract
+
+* Sustained themes filtered at `--sustained-threshold` (default 12
+  distinct days). Industries / metals below the bar are dropped.
+* Reversal events count **every** sign flip in the month (not just
+  the last), surfaced as `flips_in_month` and used as the primary
+  sort key.
+* Carry-forward forecast fires when a sustained theme's last-week
+  occurrence count is ≥3 (controlled by
+  `CARRY_FORWARD_LAST_WEEK_THRESHOLD`).
+* ETF month-over-month summary: first-day / last-day / high-day /
+  low-day with their daily NAV % and dates.
+* Missing days degrade gracefully — a sparse month still produces a
+  digest with `note` bullets flagging the small sample.
+
 ## v0.9 — 2026-05-17
 
 **feat: v0.9 — weekly digest generator (Friday cadence)**

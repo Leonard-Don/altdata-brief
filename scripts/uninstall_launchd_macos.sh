@@ -2,16 +2,19 @@
 # v0.5 — macOS launchd uninstaller for cn-altdata-brief.
 # v0.9 — also unloads the weekly digest agent installed alongside the
 #        daily job.
+# v0.11 — also unloads the monthly digest agent.
 #
-# Unloads both LaunchAgents and removes their plists. Safe to run even
-# if the agents were never installed — exits cleanly with a status
+# Unloads all three LaunchAgents and removes their plists. Safe to run
+# even if the agents were never installed — exits cleanly with a status
 # message either way.
 set -euo pipefail
 
 LABEL="com.leonardodon.cn-altdata-brief"
 WEEKLY_LABEL="${LABEL}.weekly"
+MONTHLY_LABEL="${LABEL}.monthly"
 PLIST_PATH="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 WEEKLY_PLIST_PATH="${HOME}/Library/LaunchAgents/${WEEKLY_LABEL}.plist"
+MONTHLY_PLIST_PATH="${HOME}/Library/LaunchAgents/${MONTHLY_LABEL}.plist"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
     echo "[uninstall_launchd] this script only runs on macOS." >&2
@@ -35,6 +38,7 @@ unload_and_remove() {
     fi
 }
 
+unload_and_remove "${MONTHLY_LABEL}" "${MONTHLY_PLIST_PATH}"
 unload_and_remove "${WEEKLY_LABEL}" "${WEEKLY_PLIST_PATH}"
 unload_and_remove "${LABEL}" "${PLIST_PATH}"
 
