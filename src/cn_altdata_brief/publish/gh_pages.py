@@ -47,7 +47,7 @@ import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -193,6 +193,10 @@ class GhPagesPublisher:
 
     def plan(self, date_str: str) -> PublishPlan:
         """Compute the publish plan for ``date_str`` without touching git."""
+        if not _is_valid_daily_date_stem(date_str):
+            raise PublishError(
+                f"invalid date {date_str!r}: expected YYYY-MM-DD calendar date"
+            )
         brief_path = self.brief_dir / f"{date_str}.md"
         if not brief_path.exists():
             raise PublishError(
@@ -594,8 +598,9 @@ class GhPagesPublisher:
                 continue
             if "." in stem:  # date.en, date.jp, ... — handled per row
                 continue
-            names.add(stem)
-        if extra:
+            if _is_valid_daily_date_stem(stem):
+                names.add(stem)
+        if extra and _is_valid_daily_date_stem(extra):
             names.add(extra)
         return sorted(names, reverse=True)
 
@@ -667,7 +672,7 @@ class GhPagesPublisher:
             return
         for md in sorted(briefs_target_dir.glob("*.md")):
             base = _supported_localized_stem(md.stem)
-            if base is not None and _looks_like_daily_stem(base):
+            if base is not None and _is_valid_daily_date_stem(base):
                 continue
             leaked_base = md.stem.split(".", 1)[0]
             if _looks_like_daily_stem(leaked_base):
@@ -941,6 +946,17 @@ def _supported_localized_stem(stem: str) -> str | None:
 def _looks_like_daily_stem(stem: str) -> bool:
     """Match canonical daily brief filenames: ``YYYY-MM-DD``."""
     return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", stem))
+
+
+def _is_valid_daily_date_stem(stem: str) -> bool:
+    """Return True only for strict ``YYYY-MM-DD`` calendar dates."""
+    if not _looks_like_daily_stem(stem):
+        return False
+    try:
+        date.fromisoformat(stem)
+    except ValueError:
+        return False
+    return True
 
 
 def _looks_like_digest_stem(stem: str) -> bool:

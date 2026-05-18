@@ -120,6 +120,26 @@ def test_publish_missing_brief_raises(
         pub.publish("2099-12-31", push=False)
 
 
+@pytest.mark.parametrize("bad_date", ["20260517", "2026-5-17", "2026-13-40"])
+def test_plan_and_publish_reject_invalid_date_argument(
+    tmp_repo: Path, brief_layout: dict[str, Path], bad_date: str
+) -> None:
+    (brief_layout["briefs"] / f"{bad_date}.md").write_text(
+        "# malformed date brief\n", encoding="utf-8"
+    )
+    pub = GhPagesPublisher(
+        brief_dir=brief_layout["briefs"],
+        chart_dir=brief_layout["charts"],
+        feed_path=brief_layout["feed"],
+        repo_root=tmp_repo,
+    )
+
+    with pytest.raises(PublishError, match="invalid date"):
+        pub.plan(bad_date)
+    with pytest.raises(PublishError, match="invalid date"):
+        pub.publish(bad_date, push=False)
+
+
 def test_dry_run_lists_files_and_skips_git(
     tmp_repo: Path, brief_layout: dict[str, Path]
 ) -> None:
@@ -141,6 +161,40 @@ def test_dry_run_lists_files_and_skips_git(
     # We must still be on main.
     head = _git(tmp_repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
     assert head == "main"
+
+
+def test_plan_index_only_collects_valid_daily_dates_and_keeps_en_sibling(
+    tmp_repo: Path, brief_layout: dict[str, Path]
+) -> None:
+    (brief_layout["briefs"] / "README.md").write_text(
+        "# human notes\n", encoding="utf-8"
+    )
+    (brief_layout["briefs"] / "draft.md").write_text(
+        "# draft\n", encoding="utf-8"
+    )
+    (brief_layout["briefs"] / "2026-99-99.md").write_text(
+        "# impossible date\n", encoding="utf-8"
+    )
+    (brief_layout["briefs"] / "2026-05-17.foo.md").write_text(
+        "# unsupported sibling\n", encoding="utf-8"
+    )
+    (brief_layout["briefs"] / "2026-05-17.en.md").write_text(
+        "# Brief 2026-05-17\n\nEN body\n", encoding="utf-8"
+    )
+
+    pub = GhPagesPublisher(
+        brief_dir=brief_layout["briefs"],
+        chart_dir=brief_layout["charts"],
+        feed_path=brief_layout["feed"],
+        repo_root=tmp_repo,
+    )
+
+    plan = pub.plan("2026-05-17")
+
+    assert plan.index_briefs == ["2026-05-17"]
+    planned_names = {p.name for p in plan.files_to_copy}
+    assert "2026-05-17.en.md" in planned_names
+    assert "2026-05-17.foo.md" not in planned_names
 
 
 def test_publish_creates_orphan_branch_and_commits(
