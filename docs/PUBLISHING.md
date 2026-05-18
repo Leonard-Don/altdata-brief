@@ -1,8 +1,8 @@
-# Publishing to GitHub Pages · v0.6+
+# Publishing to GitHub Pages · v0.11
 
-> v0.8 adds bilingual (CN + EN) publishing — see section 7 below. The
-> rest of this guide applies unchanged: CN is always the ground truth
-> and the EN sibling rides through the same pipeline.
+> v0.11 publishes the full cadence trilogy: daily briefs, weekly digests,
+> and monthly digests. v0.8+ bilingual CN/EN siblings and v0.10 Atom feeds
+> ride through the same publisher; CN remains the ground truth.
 
 This guide walks through turning `cn-altdata-brief` from a "writes
 markdown to my laptop" tool into a publicly readable static site at
@@ -13,11 +13,12 @@ The pipeline has three layers:
 | Layer | Where | How often |
 |---|---|---|
 | Generate brief | local laptop (launchd or manual) | every weekday 17:00 CST |
-| Push to `gh-pages` | `scripts/publish_now.sh` | chained after every generate |
+| Generate CI smoke | GitHub Actions `Daily Brief` | every weekday 09:00 CST |
+| Push to `gh-pages` | `scripts/publish_now.sh` or manual Actions `publish=true` | explicit opt-in |
 | Render as HTML | GitHub Pages (Jekyll) | automatic on every push |
 
-Upstream caches stay private — only the brief markdown / charts / RSS
-are pushed to the public branch.
+Upstream caches stay private — only generated briefs, charts, RSS/Atom
+feeds, and digest markdown are pushed to the public branch.
 
 ---
 
@@ -57,16 +58,25 @@ uv run cn-altdata-brief publish --dry-run
 ```
 
 You should see a file list including today's `briefs/<date>.md`, every
-chart PNG under `output/charts/<date>/`, and `feed.xml`. If anything
-is missing, run `uv run cn-altdata-brief generate` first.
+chart PNG under `output/charts/<date>/`, `feed.xml`, `feed.atom`, and any
+weekly/monthly files under `output/digests/`. If anything is missing, run
+`uv run cn-altdata-brief generate` first.
 
 ---
 
 ## 2. Daily auto-publish flow
 
-`scripts/run_now.sh` is the launchd entry point installed in v0.5. v0.6
-makes it chain `publish_now.sh` automatically after a successful
-generate:
+`Daily Brief` in GitHub Actions is a safety smoke by default: scheduled
+runs checkout the four public-source artifacts, run `validate` + `generate`
+under `--source-mode public`, then run `cn-altdata-brief publish --dry-run`
+to prove the publish payload is complete without mutating `gh-pages`.
+
+Real publishing remains opt-in:
+
+- local-first: `scripts/run_now.sh` chains `scripts/publish_now.sh` after a successful generate;
+- GitHub Actions: manually run **Daily Brief** and set `publish=true`.
+
+The local launchd path installed in v0.5 still looks like this:
 
 ```
 launchd 17:00 CST
@@ -78,14 +88,14 @@ scripts/run_now.sh
         scripts/publish_now.sh
             └── uv run cn-altdata-brief publish
                 ├── checkout gh-pages
-                ├── copy brief + charts + feed.xml
+                ├── copy brief + charts + RSS/Atom + digests
                 ├── overlay Jekyll template
                 ├── regenerate index.md
                 ├── commit + push origin gh-pages
                 └── restore original branch
 ```
 
-To opt out for a single run (e.g. on a plane):
+To opt out for a single local run (e.g. on a plane):
 
 ```bash
 RUN_PUBLISH_AFTER_GENERATE=0 bash scripts/run_now.sh
@@ -94,6 +104,11 @@ RUN_PUBLISH_AFTER_GENERATE=0 bash scripts/run_now.sh
 If `publish_now` fails the brief is still on disk — generate's exit
 code is what propagates. A macOS notification surfaces the publish
 failure for manual follow-up.
+
+For Actions manual publishing, the workflow first fetches
+`origin/gh-pages:gh-pages` if it exists, then calls the same CLI publisher.
+This avoids the old hand-copy template that missed newer artifacts such as
+`feed.atom`, EN siblings, weekly digests, and monthly digests.
 
 ---
 
@@ -161,7 +176,7 @@ configuration).
 | Publish refuses with `uncommitted changes` | dirty working tree on `main` | `git status`, commit or stash first |
 | Pages site is 404 after first publish | GitHub Pages source still pointing at wrong branch | Settings → Pages → Source = `gh-pages` |
 | Charts render as broken images on Pages | Jekyll filtering by frontmatter | `_config.yml` includes `charts/` — check it didn't get edited |
-| RSS feed link returns 404 | `feed.xml` not in publish payload | Ensure `output/feed.xml` exists (don't pass `--no-feed` to `generate`) |
+| RSS/Atom feed link returns 404 | Feed file not in publish payload | Ensure `output/feed.xml` / `output/feed.atom` exists; scheduled Actions dry-run should list both when present |
 
 ---
 
@@ -169,9 +184,10 @@ configuration).
 
 * **Orphan branch**: keeps `main` history clean and lets us reset the
   public site without polluting source-of-truth commits.
-* **No GitHub Actions**: the daily run is local-first (launchd from
-  v0.5). Pushes from your laptop reuse your existing `gh auth` —
-  nothing to configure server-side.
+* **GitHub Actions stays non-mutating by default**: scheduled `Daily Brief`
+  runs validate/generate plus a `publish --dry-run` payload check. A real
+  `gh-pages` push requires a manual workflow dispatch with `publish=true`,
+  and still goes through the same CLI publisher as local runs.
 * **Template overlay**: edits to the Jekyll site live in `main` and
   flow forward on every publish, so the canonical config never lives
   only on the published branch.
@@ -269,7 +285,7 @@ scripts/weekly_digest_now.sh
         scripts/publish_now.sh
             └── uv run cn-altdata-brief publish
                 ├── checkout gh-pages
-                ├── copy briefs + charts + feed.xml + digests
+                ├── copy briefs + charts + RSS/Atom feeds + digests
                 ├── overlay Jekyll template
                 ├── regenerate index.md (now with digests section)
                 ├── commit + push origin gh-pages

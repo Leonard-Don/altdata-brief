@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cn-altdata-brief"
 version = "0.11.0"
-description = "Daily research brief synthesizing alt-data signals from a portfolio of 6 quant projects (bilingual CN/EN)."
+description = "Daily research brief synthesizing alt-data signals from 4 public China-equity source adapters (bilingual CN/EN)."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"

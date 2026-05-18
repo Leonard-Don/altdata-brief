@@ -2,20 +2,23 @@ name: Daily Brief
 
 # Beijing time 09:00 = 01:00 UTC; trading days Mon-Fri.
 #
-# v0.4 plumbing:
-#   - This workflow now checks out the upstream source repos and reads their
-#     public artifacts (data/public/*_summary.json or ETF liveSnapshot.json).
-#   - `--source-mode public` forces the adapters to only read public summaries
-#     (no cache fallback), so the workflow fails loudly if a summary is missing
-#     instead of silently emitting an empty brief.
-#   - Publish step is still a TEMPLATE — running on a public fork requires the
-#     upstream repos to be public or for the workflow to have read access to
-#     their checkouts. The maintainer reviews each push to gh-pages until
-#     paid distribution begins.
+# v0.11 plumbing:
+#   - This workflow checks out the upstream public artifacts required by
+#     `--source-mode public` and fails loudly when a source summary is missing.
+#   - Scheduled runs generate and dry-run the gh-pages publish plan only.
+#   - Manual runs can opt in to a real gh-pages push via the `publish` input;
+#     the publish step delegates to the CLI publisher so Atom, EN siblings,
+#     weekly digests, and monthly digests share the local publish contract.
 on:
   schedule:
     - cron: "0 1 * * 1-5"
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Push generated artifacts to gh-pages after generation"
+        required: false
+        type: boolean
+        default: false
 
 env:
   # Tell the brief generator where the upstream checkouts will land.
@@ -106,28 +109,28 @@ jobs:
       - name: Generate brief (public-summary mode)
         run: uv run cn-altdata-brief generate --source-mode public --verbose
 
-      # Publish to gh-pages is still a TEMPLATE — disable by default until
-      # the maintainer flips a repo secret or workflow input on.
+      # Fetch the published branch into a local ref when it already exists.
+      # The CLI publisher intentionally reasons over local git refs; without
+      # this fetch a GitHub Actions checkout of `main` would mistake an existing
+      # remote gh-pages branch for a first publish and try to create an orphan.
+      - name: Prepare gh-pages branch reference
+        run: git fetch origin gh-pages:gh-pages || true
+
+      - name: Plan gh-pages publish payload
+        if: github.event_name != 'workflow_dispatch' || inputs.publish != true
+        run: |
+          set -euo pipefail
+          DATE=$(date -u +"%Y-%m-%d")
+          uv run cn-altdata-brief publish --date "$DATE" --dry-run --no-push
+
       - name: Publish to gh-pages
-        if: github.event_name == 'workflow_dispatch' && inputs.publish == 'true'
+        if: github.event_name == 'workflow_dispatch' && inputs.publish == true
         env:
           GIT_USER_NAME: cn-altdata-brief-bot
           GIT_USER_EMAIL: bot@cn-altdata-brief.local
         run: |
-          set -e
+          set -euo pipefail
           DATE=$(date -u +"%Y-%m-%d")
           git config user.name "$GIT_USER_NAME"
           git config user.email "$GIT_USER_EMAIL"
-          git fetch origin gh-pages || git checkout --orphan gh-pages
-          git checkout gh-pages || git checkout -b gh-pages
-          mkdir -p briefs
-          cp output/briefs/${DATE}.md briefs/
-          cp output/briefs/index.md briefs/index.md
-          cp output/feed.xml feed.xml
-          if [ -d output/charts/${DATE} ]; then
-            mkdir -p charts
-            cp -R output/charts/${DATE} charts/
-          fi
-          git add briefs charts feed.xml
-          git commit -m "auto: brief ${DATE}" || echo "nothing to commit"
-          git push origin gh-pages
+          uv run cn-altdata-brief publish --date "$DATE"
