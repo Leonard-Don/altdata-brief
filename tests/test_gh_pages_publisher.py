@@ -421,3 +421,128 @@ def test_v09_digests_published_alongside_briefs(
     ).stdout
     assert "本周回顾 / Weekly digests" in index
     assert "2026-W20" in index
+
+
+def test_v011_digest_language_siblings_publish_contract(
+    tmp_repo: Path,
+    brief_layout: dict[str, Path],
+    template_dir: Path,
+    tmp_path: Path,
+) -> None:
+    """v0.11 — weekly/monthly digest language siblings ship together."""
+    digests = tmp_path / "output" / "digests"
+    digests.mkdir(parents=True, exist_ok=True)
+    (digests / "2026-W20.md").write_text(
+        "# 本周回顾 W20 — 2026-05-11 → 2026-05-15\nCN weekly\n",
+        encoding="utf-8",
+    )
+    (digests / "2026-W20.en.md").write_text(
+        "# Weekly Digest W20 — 2026-05-11 → 2026-05-15\nEN weekly\n",
+        encoding="utf-8",
+    )
+    (digests / "2026-04.md").write_text(
+        "# 上月回顾 2026-04\nCN monthly\n",
+        encoding="utf-8",
+    )
+    (digests / "2026-04.en.md").write_text(
+        "# Monthly Digest 2026-04\nEN monthly\n",
+        encoding="utf-8",
+    )
+    (digests / "notes.md").write_text("draft notes\n", encoding="utf-8")
+    (digests / "2026-W20.draft.md").write_text(
+        "# Draft weekly note that must stay private\n",
+        encoding="utf-8",
+    )
+    (digests / "2026-04.draft.md").write_text(
+        "# Draft monthly note that must stay private\n",
+        encoding="utf-8",
+    )
+
+    pub = GhPagesPublisher(
+        brief_dir=brief_layout["briefs"],
+        chart_dir=brief_layout["charts"],
+        feed_path=brief_layout["feed"],
+        template_dir=template_dir,
+        repo_root=tmp_repo,
+        digest_dir=digests,
+    )
+
+    dry_run = pub.publish("2026-05-17", push=False, dry_run=True)
+    planned_names = {p.name for p in dry_run.plan.files_to_copy}
+    assert {
+        "2026-W20.md",
+        "2026-W20.en.md",
+        "2026-04.md",
+        "2026-04.en.md",
+    } <= planned_names
+    assert "notes.md" not in planned_names
+    assert "2026-W20.draft.md" not in planned_names
+    assert "2026-04.draft.md" not in planned_names
+    assert dry_run.plan.index_digests == ["2026-W20"]
+    assert dry_run.plan.index_monthlies == ["2026-04"]
+
+    result = pub.publish("2026-05-17", push=False)
+    assert result.commit_sha is not None
+    tree_entries = set(_git(tmp_repo, "ls-tree", "-r", "--name-only", "gh-pages").splitlines())
+    assert "digests/2026-W20.md" in tree_entries
+    assert "digests/2026-W20.en.md" in tree_entries
+    assert "digests/2026-04.md" in tree_entries
+    assert "digests/2026-04.en.md" in tree_entries
+    assert "digests/notes.md" not in tree_entries
+    assert "digests/2026-W20.draft.md" not in tree_entries
+    assert "digests/2026-04.draft.md" not in tree_entries
+
+    index = _git(tmp_repo, "show", "gh-pages:index.md")
+    assert "[2026-W20.en.md](digests/2026-W20.en.md)" in index
+    assert "[2026-04.en.md](digests/2026-04.en.md)" in index
+
+
+def test_v011_existing_gh_pages_draft_digest_leaks_are_pruned(
+    tmp_repo: Path,
+    brief_layout: dict[str, Path],
+    template_dir: Path,
+    tmp_path: Path,
+) -> None:
+    """v0.11 — old draft/private digest leaks are removed on next publish."""
+    _git(tmp_repo, "checkout", "--orphan", "gh-pages")
+    _git(tmp_repo, "rm", "-rf", "--cached", ".")
+    for entry in tmp_repo.iterdir():
+        if entry.name == ".git":
+            continue
+        if entry.is_dir():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+    stale = tmp_repo / "digests"
+    stale.mkdir(parents=True, exist_ok=True)
+    (stale / "2026-W20.draft.md").write_text("stale weekly draft\n", encoding="utf-8")
+    (stale / "2026-04.private.md").write_text("stale monthly draft\n", encoding="utf-8")
+    _git(tmp_repo, "add", "-A")
+    _git(tmp_repo, "commit", "-m", "seed leaked draft digests")
+    _git(tmp_repo, "checkout", "main")
+
+    digests = tmp_path / "output" / "digests"
+    digests.mkdir(parents=True, exist_ok=True)
+    (digests / "2026-W20.md").write_text("# 本周回顾 W20\n", encoding="utf-8")
+    (digests / "2026-W20.en.md").write_text("# Weekly Digest W20\n", encoding="utf-8")
+    (digests / "2026-04.md").write_text("# 上月回顾 2026-04\n", encoding="utf-8")
+    (digests / "2026-04.en.md").write_text("# Monthly Digest 2026-04\n", encoding="utf-8")
+
+    pub = GhPagesPublisher(
+        brief_dir=brief_layout["briefs"],
+        chart_dir=brief_layout["charts"],
+        feed_path=brief_layout["feed"],
+        template_dir=template_dir,
+        repo_root=tmp_repo,
+        digest_dir=digests,
+    )
+
+    result = pub.publish("2026-05-17", push=False)
+    assert result.commit_sha is not None
+    tree_entries = set(_git(tmp_repo, "ls-tree", "-r", "--name-only", "gh-pages").splitlines())
+    assert "digests/2026-W20.md" in tree_entries
+    assert "digests/2026-W20.en.md" in tree_entries
+    assert "digests/2026-04.md" in tree_entries
+    assert "digests/2026-04.en.md" in tree_entries
+    assert "digests/2026-W20.draft.md" not in tree_entries
+    assert "digests/2026-04.private.md" not in tree_entries
