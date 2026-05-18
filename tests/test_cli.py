@@ -121,6 +121,35 @@ def test_cli_generate_no_charts_flag(
     assert not (tmp_path / "feed.xml").exists()
 
 
+@pytest.mark.parametrize("bad_date", ["20260517", "2026-02-30"])
+def test_cli_generate_rejects_invalid_date_without_outputs(
+    patched_default_paths: None,
+    tmp_path: Path,
+    bad_date: str,
+) -> None:
+    briefs = tmp_path / "briefs"
+    charts = tmp_path / "charts"
+
+    code = main(
+        [
+            "generate",
+            "--date",
+            bad_date,
+            "--briefs-dir",
+            str(briefs),
+            "--charts-dir",
+            str(charts),
+        ]
+    )
+
+    assert code == 2
+    assert not (briefs / f"{bad_date}.md").exists()
+    assert not (briefs / "latest.md").exists()
+    assert not (charts / bad_date).exists()
+    assert not (tmp_path / "feed.xml").exists()
+    assert not (tmp_path / "feed.atom").exists()
+
+
 def test_cli_generate_with_llm_uses_validated_polish(
     patched_default_paths: None,
     tmp_path: Path,

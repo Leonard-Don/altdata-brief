@@ -480,8 +480,27 @@ def _build_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 
 
+def _parse_generate_date(raw_date: str | None) -> str:
+    if raw_date is None:
+        return datetime.now(UTC).strftime("%Y-%m-%d")
+
+    try:
+        parsed = datetime.strptime(raw_date, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError(f"invalid --date {raw_date!r}; expected YYYY-MM-DD") from exc
+
+    if parsed.isoformat() != raw_date:
+        raise ValueError(f"invalid --date {raw_date!r}; expected YYYY-MM-DD")
+    return raw_date
+
+
 def _cmd_generate(args: argparse.Namespace) -> int:
-    date = args.date or datetime.now(UTC).strftime("%Y-%m-%d")
+    try:
+        date = _parse_generate_date(args.date)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
     briefs_dir = Path(args.briefs_dir)
     charts_root = Path(args.charts_dir) / date
     briefs_dir.mkdir(parents=True, exist_ok=True)
