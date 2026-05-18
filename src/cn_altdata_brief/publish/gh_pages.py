@@ -278,14 +278,14 @@ class GhPagesPublisher:
         """
         if self.digest_dir is None or not self.digest_dir.exists():
             return []
-        # Filter to files that look like weekly digests: stem matches
-        # ``<iso_year>-W<week>`` (optionally with a language suffix
-        # like ``.en``). Anything else in the digests/ folder (notes,
-        # archives, drafts) is ignored.
+        # Filter to files that look like weekly digests: canonical CN
+        # stems (``YYYY-Www``) or explicitly supported language siblings
+        # (currently ``YYYY-Www.en``). Draft/private notes with a valid
+        # base stem (e.g. ``YYYY-Www.draft``) must not leak to Pages.
         out: list[Path] = []
         for p in self.digest_dir.glob("*.md"):
-            stem = p.stem
-            if _looks_like_digest_stem(stem):
+            base = _supported_localized_stem(p.stem)
+            if base is not None and _looks_like_digest_stem(base):
                 out.append(p)
         return sorted(out, reverse=True)
 
@@ -317,9 +317,8 @@ class GhPagesPublisher:
             return []
         out: list[Path] = []
         for p in self.digest_dir.glob("*.md"):
-            stem = p.stem
-            base = stem.split(".", 1)[0] if "." in stem else stem
-            if _looks_like_monthly_stem(base):
+            base = _supported_localized_stem(p.stem)
+            if base is not None and _looks_like_monthly_stem(base):
                 out.append(p)
         return sorted(out, reverse=True)
 
@@ -626,8 +625,13 @@ class GhPagesPublisher:
             shutil.copy2(plan.atom_source, self.repo_root / plan.atom_source.name)
 
         # 4. v0.9 — weekly digests → ``digests/<iso_year>-W<week>.md``.
+        # Remove old public leaks such as ``2026-W20.draft.md`` before
+        # copying the current allowlisted digest set. Otherwise files
+        # that were mistakenly committed to gh-pages once would remain
+        # reachable even after the source collector stops selecting them.
+        digests_target_dir = self.repo_root / "digests"
+        self._prune_unsupported_digest_files(digests_target_dir)
         if plan.digest_sources:
-            digests_target_dir = self.repo_root / "digests"
             digests_target_dir.mkdir(parents=True, exist_ok=True)
             for digest_md in plan.digest_sources:
                 shutil.copy2(digest_md, digests_target_dir / digest_md.name)
@@ -639,6 +643,17 @@ class GhPagesPublisher:
             digests_target_dir.mkdir(parents=True, exist_ok=True)
             for monthly_md in plan.monthly_sources:
                 shutil.copy2(monthly_md, digests_target_dir / monthly_md.name)
+
+    def _prune_unsupported_digest_files(self, digests_target_dir: Path) -> None:
+        """Delete stale public digest files with unsupported language/draft suffixes."""
+        if not digests_target_dir.exists():
+            return
+        for md in sorted(digests_target_dir.glob("*.md")):
+            if _supported_localized_stem(md.stem) is not None:
+                continue
+            base = md.stem.split(".", 1)[0]
+            if _looks_like_digest_stem(base) or _looks_like_monthly_stem(base):
+                md.unlink()
 
     def _overlay_template(self) -> None:
         """Copy ``gh-pages-template/*`` over the worktree (only if present)."""
@@ -884,6 +899,25 @@ def _detect_preview_chart(charts_root: Path, date_stem: str) -> str | None:
     return None
 
 
+_SUPPORTED_DIGEST_LANGUAGE_SUFFIXES = frozenset({"en"})
+
+
+def _supported_localized_stem(stem: str) -> str | None:
+    """Return canonical stem for CN or supported language siblings.
+
+    ``2026-W20`` and ``2026-W20.en`` both map to ``2026-W20``.
+    ``2026-W20.draft`` returns ``None`` so private/draft notes with a
+    digest-looking base stem cannot leak into the public gh-pages tree.
+    """
+
+    if "." not in stem:
+        return stem
+    base, lang = stem.rsplit(".", 1)
+    if lang.lower() in _SUPPORTED_DIGEST_LANGUAGE_SUFFIXES:
+        return base
+    return None
+
+
 def _looks_like_digest_stem(stem: str) -> bool:
     """Match ``<iso_year>-W<week>`` style digest filenames.
 
@@ -953,5 +987,4 @@ def default_atom_path() -> Path:
 def utc_today() -> str:
     """Return today's UTC date in ``YYYY-MM-DD`` form (matches the CLI default)."""
     return datetime.now(UTC).strftime("%Y-%m-%d")
-
 
