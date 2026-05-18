@@ -150,6 +150,39 @@ def test_cli_generate_rejects_invalid_date_without_outputs(
     assert not (tmp_path / "feed.atom").exists()
 
 
+def test_cli_generate_rejects_invalid_languages_without_outputs(
+    patched_default_paths: None,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Unsupported translation language codes fail before writing briefs/charts."""
+    briefs = tmp_path / "briefs"
+    charts = tmp_path / "charts"
+
+    code = main(
+        [
+            "generate",
+            "--date",
+            "2026-05-17",
+            "--briefs-dir",
+            str(briefs),
+            "--charts-dir",
+            str(charts),
+            "--languages",
+            "CN,JP",
+        ]
+    )
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "unsupported language code 'JP'" in captured.err
+    assert not (briefs / "2026-05-17.md").exists()
+    assert not (briefs / "latest.md").exists()
+    assert not (charts / "2026-05-17").exists()
+    assert not (tmp_path / "feed.xml").exists()
+    assert not (tmp_path / "feed.atom").exists()
+
+
 def test_cli_generate_with_llm_uses_validated_polish(
     patched_default_paths: None,
     tmp_path: Path,
