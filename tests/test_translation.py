@@ -408,26 +408,32 @@ def test_cli_generate_rejects_unsupported_language(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with pytest.raises(SystemExit) as excinfo:
-        main(
-            [
-                "generate",
-                "--date",
-                "2026-05-17",
-                "--briefs-dir",
-                str(tmp_path / "briefs"),
-                "--charts-dir",
-                str(tmp_path / "charts"),
-                "--no-charts",
-                "--no-index",
-                "--no-feed",
-                "--languages",
-                "CN,XX",
-            ]
-        )
-    assert excinfo.value.code == 2
+    briefs = tmp_path / "briefs"
+    charts = tmp_path / "charts"
+
+    code = main(
+        [
+            "generate",
+            "--date",
+            "2026-05-17",
+            "--briefs-dir",
+            str(briefs),
+            "--charts-dir",
+            str(charts),
+            "--no-charts",
+            "--no-index",
+            "--no-feed",
+            "--languages",
+            "CN,XX",
+        ]
+    )
+
+    assert code == 2
     err = capsys.readouterr().err
     assert "unsupported language code" in err
+    assert not (briefs / "2026-05-17.md").exists()
+    assert not (briefs / "latest.md").exists()
+    assert not (charts / "2026-05-17").exists()
 
 
 # ---------------------------------------------------------------------------
