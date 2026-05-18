@@ -386,6 +386,93 @@ def test_chart_dir_missing_silently_skipped(
     assert "charts/" not in tree  # no chart was copied
 
 
+def test_daily_brief_language_siblings_publish_contract(
+    tmp_repo: Path,
+    brief_layout: dict[str, Path],
+    template_dir: Path,
+) -> None:
+    """Daily brief siblings are allowlisted: canonical CN + EN only."""
+    (brief_layout["briefs"] / "2026-05-17.en.md").write_text(
+        "# Brief 2026-05-17\n\nEN body\n", encoding="utf-8"
+    )
+    (brief_layout["briefs"] / "2026-05-17.draft.md").write_text(
+        "# Draft daily note that must stay private\n", encoding="utf-8"
+    )
+    (brief_layout["briefs"] / "2026-05-17.private.md").write_text(
+        "# Private daily note that must stay private\n", encoding="utf-8"
+    )
+
+    pub = GhPagesPublisher(
+        brief_dir=brief_layout["briefs"],
+        chart_dir=brief_layout["charts"],
+        feed_path=brief_layout["feed"],
+        template_dir=template_dir,
+        repo_root=tmp_repo,
+    )
+
+    dry_run = pub.publish("2026-05-17", push=False, dry_run=True)
+    planned_names = {p.name for p in dry_run.plan.files_to_copy}
+    assert "2026-05-17.md" in planned_names
+    assert "2026-05-17.en.md" in planned_names
+    assert "2026-05-17.draft.md" not in planned_names
+    assert "2026-05-17.private.md" not in planned_names
+
+    result = pub.publish("2026-05-17", push=False)
+    assert result.commit_sha is not None
+    tree_entries = set(_git(tmp_repo, "ls-tree", "-r", "--name-only", "gh-pages").splitlines())
+    assert "briefs/2026-05-17.md" in tree_entries
+    assert "briefs/2026-05-17.en.md" in tree_entries
+    assert "briefs/2026-05-17.draft.md" not in tree_entries
+    assert "briefs/2026-05-17.private.md" not in tree_entries
+
+    index = _git(tmp_repo, "show", "gh-pages:index.md")
+    assert "[2026-05-17.en.md](briefs/2026-05-17.en.md)" in index
+
+
+def test_existing_gh_pages_draft_daily_leaks_are_pruned(
+    tmp_repo: Path,
+    brief_layout: dict[str, Path],
+    template_dir: Path,
+) -> None:
+    """Old daily draft/private leaks are removed on the next publish."""
+    _git(tmp_repo, "checkout", "--orphan", "gh-pages")
+    _git(tmp_repo, "rm", "-rf", "--cached", ".")
+    for entry in tmp_repo.iterdir():
+        if entry.name == ".git":
+            continue
+        if entry.is_dir():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+    stale = tmp_repo / "briefs"
+    stale.mkdir(parents=True, exist_ok=True)
+    (stale / "2026-05-17.draft.md").write_text("stale draft\n", encoding="utf-8")
+    (stale / "2026-05-17.private.md").write_text("stale private\n", encoding="utf-8")
+    _git(tmp_repo, "add", "-A")
+    _git(tmp_repo, "commit", "-m", "seed leaked draft daily briefs")
+    _git(tmp_repo, "checkout", "main")
+
+    (brief_layout["briefs"] / "2026-05-17.en.md").write_text(
+        "# Brief 2026-05-17\n\nEN body\n", encoding="utf-8"
+    )
+
+    pub = GhPagesPublisher(
+        brief_dir=brief_layout["briefs"],
+        chart_dir=brief_layout["charts"],
+        feed_path=brief_layout["feed"],
+        template_dir=template_dir,
+        repo_root=tmp_repo,
+    )
+
+    result = pub.publish("2026-05-17", push=False)
+    assert result.commit_sha is not None
+    tree_entries = set(_git(tmp_repo, "ls-tree", "-r", "--name-only", "gh-pages").splitlines())
+    assert "briefs/2026-05-17.md" in tree_entries
+    assert "briefs/2026-05-17.en.md" in tree_entries
+    assert "briefs/2026-05-17.draft.md" not in tree_entries
+    assert "briefs/2026-05-17.private.md" not in tree_entries
+
+
 def test_v09_digests_published_alongside_briefs(
     tmp_repo: Path,
     brief_layout: dict[str, Path],
