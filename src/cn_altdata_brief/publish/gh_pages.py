@@ -212,8 +212,9 @@ class GhPagesPublisher:
         )
 
         files_to_copy: list[Path] = [brief_path]
-        # v0.8: pick up bilingual siblings. Each ``YYYY-MM-DD.<lang>.md``
-        # next to the CN file is shipped under the same name.
+        # v0.8: pick up bilingual siblings. Each supported
+        # ``YYYY-MM-DD.<lang>.md`` next to the CN file is shipped
+        # under the same name.
         files_to_copy.extend(self._collect_language_variants(date_str))
         if chart_subdir is not None:
             files_to_copy.extend(sorted(chart_subdir.glob("*.png")))
@@ -265,7 +266,11 @@ class GhPagesPublisher:
         (the only translation we currently emit). The list excludes
         the canonical CN file because :meth:`plan` already appended it.
         """
-        return sorted(self.brief_dir.glob(f"{date_str}.*.md"))
+        return sorted(
+            p
+            for p in self.brief_dir.glob(f"{date_str}.*.md")
+            if _supported_localized_stem(p.stem) == date_str
+        )
 
     def _collect_digest_sources(self) -> list[Path]:
         """Return every weekly digest markdown file under ``digest_dir``.
@@ -602,6 +607,7 @@ class GhPagesPublisher:
         #    copy logic stays self-contained and idempotent.
         briefs_target_dir = self.repo_root / "briefs"
         briefs_target_dir.mkdir(parents=True, exist_ok=True)
+        self._prune_unsupported_brief_files(briefs_target_dir)
         shutil.copy2(
             plan.brief_source,
             briefs_target_dir / plan.brief_source.name,
@@ -653,6 +659,18 @@ class GhPagesPublisher:
                 continue
             base = md.stem.split(".", 1)[0]
             if _looks_like_digest_stem(base) or _looks_like_monthly_stem(base):
+                md.unlink()
+
+    def _prune_unsupported_brief_files(self, briefs_target_dir: Path) -> None:
+        """Delete stale public daily files with unsupported language/draft suffixes."""
+        if not briefs_target_dir.exists():
+            return
+        for md in sorted(briefs_target_dir.glob("*.md")):
+            base = _supported_localized_stem(md.stem)
+            if base is not None and _looks_like_daily_stem(base):
+                continue
+            leaked_base = md.stem.split(".", 1)[0]
+            if _looks_like_daily_stem(leaked_base):
                 md.unlink()
 
     def _overlay_template(self) -> None:
@@ -899,23 +917,30 @@ def _detect_preview_chart(charts_root: Path, date_stem: str) -> str | None:
     return None
 
 
-_SUPPORTED_DIGEST_LANGUAGE_SUFFIXES = frozenset({"en"})
+_SUPPORTED_LANGUAGE_SUFFIXES = frozenset({"en"})
 
 
 def _supported_localized_stem(stem: str) -> str | None:
     """Return canonical stem for CN or supported language siblings.
 
-    ``2026-W20`` and ``2026-W20.en`` both map to ``2026-W20``.
-    ``2026-W20.draft`` returns ``None`` so private/draft notes with a
-    digest-looking base stem cannot leak into the public gh-pages tree.
+    ``2026-W20`` / ``2026-W20.en`` and ``2026-05-17`` /
+    ``2026-05-17.en`` both map to their canonical stem.
+    ``2026-W20.draft`` and ``2026-05-17.private`` return ``None`` so
+    private/draft notes with a publish-looking base stem cannot leak
+    into the public gh-pages tree.
     """
 
     if "." not in stem:
         return stem
     base, lang = stem.rsplit(".", 1)
-    if lang.lower() in _SUPPORTED_DIGEST_LANGUAGE_SUFFIXES:
+    if lang.lower() in _SUPPORTED_LANGUAGE_SUFFIXES:
         return base
     return None
+
+
+def _looks_like_daily_stem(stem: str) -> bool:
+    """Match canonical daily brief filenames: ``YYYY-MM-DD``."""
+    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", stem))
 
 
 def _looks_like_digest_stem(stem: str) -> bool:
@@ -953,10 +978,10 @@ def _detect_languages_for(briefs_root: Path, date_stem: str) -> list[str]:
         return []
     codes: list[str] = []
     for p in briefs_root.glob(f"{date_stem}.*.md"):
-        # stem is "2026-05-17.en" -> language code is "en"
-        parts = p.stem.split(".")
-        if len(parts) >= 2:
-            codes.append(parts[-1].lower())
+        base = _supported_localized_stem(p.stem)
+        if base == date_stem:
+            # stem is "2026-05-17.en" -> language code is "en"
+            codes.append(p.stem.rsplit(".", 1)[-1].lower())
     return sorted(set(codes))
 
 
@@ -987,4 +1012,3 @@ def default_atom_path() -> Path:
 def utc_today() -> str:
     """Return today's UTC date in ``YYYY-MM-DD`` form (matches the CLI default)."""
     return datetime.now(UTC).strftime("%Y-%m-%d")
-
