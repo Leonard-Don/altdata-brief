@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import html
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from pathlib import Path
 from uuid import uuid4
@@ -89,6 +89,11 @@ def render_feed(
                 digests_dir, chart_dir=chart_dir, site_url=site_url
             )
         )
+        items.extend(
+            _collect_monthly_items(
+                digests_dir, chart_dir=chart_dir, site_url=site_url
+            )
+        )
     items.sort(key=lambda it: it.get("sort_key", ""), reverse=True)
     items = items[:max_items]
 
@@ -110,6 +115,9 @@ def render_feed(
         if kind == "digest":
             link_path = f"digests/{item['date']}{suffix}.html"
             guid_prefix = "cn-altdata-brief:digest"
+        elif kind == "monthly":
+            link_path = f"digests/{item['date']}{suffix}.html"
+            guid_prefix = "cn-altdata-brief:monthly"
         else:
             link_path = f"briefs/{item['date']}{suffix}.html"
             guid_prefix = "cn-altdata-brief"
@@ -135,6 +143,9 @@ def render_feed(
             # Custom category so subscribers can filter weekly vs daily
             # without parsing the title prefix.
             ET.SubElement(item_el, "category").text = "weekly-digest"
+        elif kind == "monthly":
+            # v0.11 — monthly cadence flag for subscriber filters.
+            ET.SubElement(item_el, "category").text = "monthly-digest"
         # v0.10 — semantic categories from the brief's signal industries.
         for cat in item.get("categories") or ():
             ET.SubElement(item_el, "category").text = cat
@@ -339,6 +350,77 @@ def _collect_digest_items(
     return items
 
 
+def _collect_monthly_items(
+    digests_dir: Path,
+    *,
+    chart_dir: Path | None = None,
+    site_url: str = "",
+) -> list[dict[str, str]]:
+    """v0.11 — return RSS items for every monthly digest under ``digests_dir``.
+
+    Monthly digests share ``digests/`` with weekly digests; the
+    filename shape (``YYYY-MM`` vs ``YYYY-Www``) distinguishes the
+    cadence. Sort key is the last day of the month so the merged feed
+    orders daily / weekly / monthly items chronologically.
+    """
+    if not digests_dir.exists():
+        return []
+    cn_stems: list[tuple[str, str]] = []
+    monthly_re = re.compile(r"^(\d{4})-(\d{2})$")
+    for path in digests_dir.glob("*.md"):
+        stem = path.stem
+        if "." in stem:
+            continue
+        m = monthly_re.fullmatch(stem)
+        if not m:
+            continue
+        year = int(m.group(1))
+        month = int(m.group(2))
+        if not 1 <= month <= 12:
+            continue
+        # Last day of the month — calendar.monthrange would import
+        # another stdlib; the next-month-day-zero trick is cheaper.
+        if month == 12:
+            last_day = (datetime(year + 1, 1, 1) - timedelta(days=1)).date()
+        else:
+            last_day = (datetime(year, month + 1, 1) - timedelta(days=1)).date()
+        cn_stems.append((stem, last_day.isoformat()))
+    cn_stems.sort(key=lambda kv: kv[1], reverse=True)
+
+    items: list[dict[str, str]] = []
+    for stem, last_iso in cn_stems:
+        for suffix, lang, title_prefix, desc_fallback in _LANGUAGE_VARIANTS:
+            candidate = digests_dir / f"{stem}{suffix}.md"
+            if not candidate.exists():
+                continue
+            text = candidate.read_text(encoding="utf-8")
+            headline = _extract_top_headline(text)
+            description = _extract_first_paragraph(text) or desc_fallback
+            base_title = (
+                f"上月回顾 {stem}" if not title_prefix else f"Monthly Digest {stem}"
+            )
+            title = f"[Monthly] {base_title}"
+            if headline:
+                title = f"{title} · {headline}"
+            if title_prefix:
+                title = f"{title_prefix.strip()} {title}".strip()
+            guid_lang = lang.split("-")[0] if lang and lang != CHANNEL_LANGUAGE else ""
+            items.append(
+                {
+                    "date": stem,
+                    "title": title,
+                    "pub_date": _date_to_rfc822(last_iso),
+                    "description": description,
+                    "file_suffix": suffix,
+                    "language": lang,
+                    "guid_lang": guid_lang,
+                    "kind": "monthly",
+                    "sort_key": last_iso,
+                }
+            )
+    return items
+
+
 def _iso_week_friday(iso_year: int, iso_week: int):
     """Return the Friday of the given ISO year/week as a date object.
 
@@ -453,6 +535,11 @@ def render_atom_feed(
                 digests_dir, chart_dir=chart_dir, site_url=site_url
             )
         )
+        items.extend(
+            _collect_monthly_items(
+                digests_dir, chart_dir=chart_dir, site_url=site_url
+            )
+        )
     items.sort(key=lambda it: it.get("sort_key", ""), reverse=True)
     items = items[:max_items]
 
@@ -499,6 +586,9 @@ def render_atom_feed(
         if kind == "digest":
             link_path = f"digests/{item['date']}{suffix}.html"
             guid_prefix = "cn-altdata-brief:digest"
+        elif kind == "monthly":
+            link_path = f"digests/{item['date']}{suffix}.html"
+            guid_prefix = "cn-altdata-brief:monthly"
         else:
             link_path = f"briefs/{item['date']}{suffix}.html"
             guid_prefix = "cn-altdata-brief"
@@ -550,6 +640,12 @@ def render_atom_feed(
                 entry,
                 f"{{{ATOM_NS}}}category",
                 attrib={"term": "weekly-digest"},
+            )
+        elif kind == "monthly":
+            ET.SubElement(
+                entry,
+                f"{{{ATOM_NS}}}category",
+                attrib={"term": "monthly-digest"},
             )
 
         image_url = item.get("image_url")
@@ -613,9 +709,11 @@ def _iso8601(dt: datetime) -> str:
 def _atom_date_from_brief_date(date_str: str) -> str:
     """Return ISO-8601 09:00 UTC stamp for an Atom updated/published field.
 
-    Accepts both ``YYYY-MM-DD`` and ``YYYY-Www`` (digest) stems. For
-    digests we recover the Friday of that ISO week so the timestamp is
-    monotonic across the merged feed.
+    Accepts ``YYYY-MM-DD`` (daily), ``YYYY-Www`` (weekly digest), and
+    ``YYYY-MM`` (v0.11 monthly digest) stems. For weekly digests we
+    recover the Friday of that ISO week; for monthly digests we use
+    the last day of the calendar month so the timestamp is monotonic
+    across the merged feed.
     """
     if _looks_like_date(date_str):
         dt = datetime.strptime(date_str, "%Y-%m-%d").replace(hour=9, tzinfo=UTC)
@@ -628,6 +726,20 @@ def _atom_date_from_brief_date(date_str: str) -> str:
             hour=18, tzinfo=UTC
         )
         return _iso8601(dt)
+    monthly_re = re.compile(r"^(\d{4})-(\d{2})$")
+    m = monthly_re.fullmatch(date_str)
+    if m:
+        year = int(m.group(1))
+        month = int(m.group(2))
+        if 1 <= month <= 12:
+            if month == 12:
+                last_day = (datetime(year + 1, 1, 1) - timedelta(days=1)).date()
+            else:
+                last_day = (datetime(year, month + 1, 1) - timedelta(days=1)).date()
+            dt = datetime.combine(last_day, datetime.min.time()).replace(
+                hour=17, tzinfo=UTC
+            )
+            return _iso8601(dt)
     # Last-resort fallback so we never emit an empty Atom timestamp
     # (would fail schema validation in strict clients).
     return _iso8601(datetime.now(UTC))

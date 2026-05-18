@@ -77,6 +77,10 @@ class PublishPlan:
     v0.9 — also tracks any weekly digests under ``digest_sources`` so
     they ride along to the gh-pages branch on every publish (no need
     for a separate "publish-digest" subcommand).
+
+    v0.11 — ``monthly_sources`` / ``index_monthlies`` mirror the weekly
+    fields for the new third cadence; the publisher copies them to
+    ``digests/<YYYY-MM>.md`` and renders a separate table on the index.
     """
 
     date: str
@@ -88,7 +92,9 @@ class PublishPlan:
     files_to_copy: list[Path] = field(default_factory=list)
     index_briefs: list[str] = field(default_factory=list)
     index_digests: list[str] = field(default_factory=list)
+    index_monthlies: list[str] = field(default_factory=list)
     digest_sources: list[Path] = field(default_factory=list)
+    monthly_sources: list[Path] = field(default_factory=list)
     will_create_orphan: bool = False
 
 
@@ -223,9 +229,16 @@ class GhPagesPublisher:
         digest_sources = self._collect_digest_sources()
         files_to_copy.extend(digest_sources)
 
+        # v0.11 — pick up any monthly digests sitting in the same
+        # ``digest_dir``. Filename shape (``YYYY-MM`` vs ``YYYY-Www``)
+        # tells the two cadences apart; both live in ``digests/``.
+        monthly_sources = self._collect_monthly_sources()
+        files_to_copy.extend(monthly_sources)
+
         # Index lists ALL dated briefs (existing + the new one merged in).
         all_dates = self._collect_all_brief_dates(extra=date_str)
         digest_stems = self._collect_digest_stems(digest_sources)
+        monthly_stems = self._collect_monthly_stems(monthly_sources)
 
         will_create_orphan = not self._branch_exists(self.gh_pages_branch)
 
@@ -239,7 +252,9 @@ class GhPagesPublisher:
             files_to_copy=files_to_copy,
             index_briefs=all_dates,
             index_digests=digest_stems,
+            index_monthlies=monthly_stems,
             digest_sources=digest_sources,
+            monthly_sources=monthly_sources,
             will_create_orphan=will_create_orphan,
         )
 
@@ -287,6 +302,35 @@ class GhPagesPublisher:
             if "." in stem:
                 stem = stem.split(".", 1)[0]
             if _looks_like_digest_stem(stem):
+                stems.add(stem)
+        return sorted(stems, reverse=True)
+
+    def _collect_monthly_sources(self) -> list[Path]:
+        """v0.11 — return every monthly digest markdown file under ``digest_dir``.
+
+        Monthly digests share the ``digests/`` directory with weekly
+        digests but use a different filename shape (``YYYY-MM`` instead
+        of ``YYYY-Www``). This split keeps both cadences in one place
+        on disk and on the gh-pages branch.
+        """
+        if self.digest_dir is None or not self.digest_dir.exists():
+            return []
+        out: list[Path] = []
+        for p in self.digest_dir.glob("*.md"):
+            stem = p.stem
+            base = stem.split(".", 1)[0] if "." in stem else stem
+            if _looks_like_monthly_stem(base):
+                out.append(p)
+        return sorted(out, reverse=True)
+
+    def _collect_monthly_stems(self, sources: list[Path]) -> list[str]:
+        """v0.11 — de-dup monthly stems for the index table."""
+        stems: set[str] = set()
+        for p in sources:
+            stem = p.stem
+            if "." in stem:
+                stem = stem.split(".", 1)[0]
+            if _looks_like_monthly_stem(stem):
                 stems.add(stem)
         return sorted(stems, reverse=True)
 
@@ -356,7 +400,11 @@ class GhPagesPublisher:
 
             self._copy_into_worktree(the_plan)
             self._overlay_template()
-            self._write_index_md(the_plan.index_briefs, the_plan.index_digests)
+            self._write_index_md(
+                the_plan.index_briefs,
+                the_plan.index_digests,
+                the_plan.index_monthlies,
+            )
 
             self._git("add", "-A")
             if not self._has_staged_changes():
@@ -584,6 +632,14 @@ class GhPagesPublisher:
             for digest_md in plan.digest_sources:
                 shutil.copy2(digest_md, digests_target_dir / digest_md.name)
 
+        # 5. v0.11 — monthly digests → ``digests/<YYYY-MM>.md`` (same
+        # directory as weekly digests; the stem shape disambiguates).
+        if plan.monthly_sources:
+            digests_target_dir = self.repo_root / "digests"
+            digests_target_dir.mkdir(parents=True, exist_ok=True)
+            for monthly_md in plan.monthly_sources:
+                shutil.copy2(monthly_md, digests_target_dir / monthly_md.name)
+
     def _overlay_template(self) -> None:
         """Copy ``gh-pages-template/*`` over the worktree (only if present)."""
         if not self.template_dir.exists():
@@ -600,7 +656,12 @@ class GhPagesPublisher:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
 
-    def _write_index_md(self, dated_briefs: list[str], digest_stems: list[str] | None = None) -> None:
+    def _write_index_md(
+        self,
+        dated_briefs: list[str],
+        digest_stems: list[str] | None = None,
+        monthly_stems: list[str] | None = None,
+    ) -> None:
         """Emit the public landing page listing every published brief.
 
         v0.8 — looks for sibling ``YYYY-MM-DD.en.md`` files inside the
@@ -614,6 +675,10 @@ class GhPagesPublisher:
 
         v0.10 — also detects which chart PNG sits under ``charts/<date>/``
         so the index can render a 48px thumbnail preview per row.
+
+        v0.11 — adds a third section for monthly digests (``YYYY-MM``)
+        rendered into the same gh-pages page. Three tables now: daily
+        briefs, weekly digests, monthly digests.
         """
         briefs_root = self.repo_root / "briefs"
         languages_per_date = {
@@ -622,6 +687,9 @@ class GhPagesPublisher:
         digests_root = self.repo_root / "digests"
         languages_per_digest = {
             stem: _detect_languages_for(digests_root, stem) for stem in (digest_stems or [])
+        }
+        languages_per_monthly = {
+            stem: _detect_languages_for(digests_root, stem) for stem in (monthly_stems or [])
         }
         charts_root = self.repo_root / "charts"
         previews_per_date = {
@@ -633,6 +701,8 @@ class GhPagesPublisher:
             languages_per_date=languages_per_date,
             digest_stems=digest_stems or [],
             languages_per_digest=languages_per_digest,
+            monthly_stems=monthly_stems or [],
+            languages_per_monthly=languages_per_monthly,
             previews_per_date=previews_per_date,
         )
         target.write_text(body, encoding="utf-8")
@@ -665,6 +735,8 @@ def _render_index_md(
     languages_per_date: dict[str, list[str]] | None = None,
     digest_stems: list[str] | None = None,
     languages_per_digest: dict[str, list[str]] | None = None,
+    monthly_stems: list[str] | None = None,
+    languages_per_monthly: dict[str, list[str]] | None = None,
     previews_per_date: dict[str, str | None] | None = None,
 ) -> str:
     """Render the gh-pages landing page.
@@ -672,7 +744,9 @@ def _render_index_md(
     Public format — kept stable so subscribers can scrape it. v0.8
     splits the brief column into Chinese / English. v0.9 adds a
     separate "本周回顾 / Weekly digests" section. v0.10 adds a chart
-    thumbnail column + RSS/Atom subscribe + share buttons.
+    thumbnail column + RSS/Atom subscribe + share buttons. v0.11 adds
+    a third table for monthly digests so the cadence trilogy
+    (daily / weekly / monthly) is visible on the landing page.
     """
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = [
@@ -688,6 +762,7 @@ def _render_index_md(
         "> synthesized from 6 quant projects. Updated every trading day at 17:00 (UTC+8).",
         "> 中文为权威版本，English 为 LLM 翻译（保留事实，标注 source hash）。",
         "> v0.9 起每周五 18:00 还会发布一份 **本周回顾 / Weekly digest**，聚合本周 5 份日报。",
+        "> v0.11 起每月 1 日 17:00 还会发布一份 **上月回顾 / Monthly digest**，聚合上月 ~20 份日报 + 4 份周报。",
         "",
         f"_Last regenerated: {now}_",
         "",
@@ -748,6 +823,22 @@ def _render_index_md(
                 en_cell = "—"
             lines.append(f"| {stem} | {cn_cell} | {en_cell} |")
     lines.append("")
+    lines.append("## 上月回顾 / Monthly digests")
+    lines.append("")
+    lines.append("| 月份 / Month | 中文 / Chinese | English |")
+    lines.append("|---|---|---|")
+    if not (monthly_stems or []):
+        lines.append("| _(暂无 / none yet — generated on the 1st of each month at 17:00)_ | — | — |")
+    else:
+        for stem in monthly_stems or []:
+            langs = (languages_per_monthly or {}).get(stem, [])
+            cn_cell = f"[{stem}.md](digests/{stem}.md)"
+            if "en" in langs:
+                en_cell = f"[{stem}.en.md](digests/{stem}.en.md)"
+            else:
+                en_cell = "—"
+            lines.append(f"| {stem} | {cn_cell} | {en_cell} |")
+    lines.append("")
     lines.append("<style>")
     lines.append(
         ".subscribe-bar, .share-bar { display: flex; flex-wrap: wrap; gap: 0.5rem; "
@@ -800,6 +891,22 @@ def _looks_like_digest_stem(stem: str) -> bool:
     briefs (``2026-05-17``) or non-date files (``index``, ``latest``).
     """
     return bool(re.fullmatch(r"\d{4}-W\d{2}", stem))
+
+
+def _looks_like_monthly_stem(stem: str) -> bool:
+    """v0.11 — match ``<YYYY>-<MM>`` style monthly digest filenames.
+
+    Returns True for stems like ``2026-04`` (where MM is 01..12). We
+    deliberately exclude daily briefs (``2026-04-15``) — those have
+    three dash-separated components — and weekly digests
+    (``2026-W18``) — those have a ``W`` after the dash. Both cadences
+    coexist in ``digests/`` so the disambiguation matters.
+    """
+    m = re.fullmatch(r"(?P<y>\d{4})-(?P<m>\d{2})", stem)
+    if not m:
+        return False
+    month = int(m.group("m"))
+    return 1 <= month <= 12
 
 
 def _detect_languages_for(briefs_root: Path, date_stem: str) -> list[str]:

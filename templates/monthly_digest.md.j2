@@ -1,0 +1,138 @@
+---
+kind: monthly-digest
+month_label: {{ month_label }}
+month_start: {{ month_start }}
+month_end: {{ month_end }}
+generated_at: {{ fetched_at }}
+brief_count: {{ brief_count }}
+digest_count: {{ digest_count }}
+sustained_themes_count: {{ sustained_themes|length }}
+reversal_events_count: {{ reversal_events|length }}
+---
+
+# 上月回顾 {{ month_label }} — {{ month_start }} → {{ month_end }}
+
+> 由 `cn-altdata-brief` 在 {{ fetched_at }} 自动生成，聚合本月 {{ brief_count }} 份每日简报 + {{ digest_count }} 份周度回顾。
+> 本文件为月度回顾（deterministic synthesis），不包含 LLM 改写；`--with-llm` 仅用来产出英文 sibling。
+
+---
+
+## 本月核心信号
+
+{% for line in top_signals %}
+- {{ line }}
+{% endfor %}
+
+{% if etf_monthly_summary.month_cumulative_pct is not none %}
+> ETF 512400 本月累计 NAV 变动 `{{ '%+0.2f'|format(etf_monthly_summary.month_cumulative_pct) }}%`（首日 {{ etf_monthly_summary.first_day }} → 末日 {{ etf_monthly_summary.last_day }}）
+{% endif %}
+
+---
+
+## 1. 月度核心主题
+
+> 阈值：在本月 ≥12 个交易日重复出现的行业 / 金属。
+
+{% if sustained_themes %}
+{% for t in sustained_themes %}
+- **{{ t.name }}**（{{ '政策' if t.kind == 'policy' else '库存' }}） — 出现 {{ t.occurrence_days }} 天 · 累计 `{{ '%+0.3f'|format(t.cumulative_impact) }}` · 末态={{ t.label_hint or '—' }} · 月末最后一周 {{ t.last_week_occurrences }} 次
+  - 周度分布：{% for week_label, count in t.per_week %}{{ week_label }}={{ count }}天{% if not loop.last %} · {% endif %}{% endfor %}
+
+{% endfor %}
+{% else %}
+- _本月未达到月度主题阈值（≥12 天）的行业 / 金属。_
+{% endif %}
+
+---
+
+## 2. 信号反转事件
+
+> 标准：(行业 / 金属, 信号类型) 的数值正负号在本月内出现至少 1 次反转。按 `flips_in_month` 降序。
+
+{% if reversal_events %}
+{% for e in reversal_events %}
+- **{{ e.name }}**（{{ '政策' if e.kind == 'policy' else '库存' }}） — 月内翻转 **{{ e.flips_in_month }}** 次 · 最近一次 `{{ e.flipped_from }}` → `{{ e.flipped_to }}` · flip dates={{ e.flip_dates|join(' → ') }}
+{% endfor %}
+{% else %}
+- _本月未观察到信号反转事件。_
+{% endif %}
+
+---
+
+## 3. 行业累计影响排行
+
+> 全部出现过的行业按 |累计 avg_impact| 排序（top 10）。
+
+{% if industry_cumulative_impact %}
+{% for row in industry_cumulative_impact[:10] %}
+- **{{ row.industry }}**：累计 avg_impact = `{{ '%+0.3f'|format(row.cumulative) }}`
+{% endfor %}
+{% else %}
+- _本月无政策信号样本。_
+{% endif %}
+
+---
+
+## 4. ETF 资金流月度变化
+
+{% if etf_monthly_summary.month_cumulative_pct is not none %}
+- 月内累计 NAV 变动：`{{ '%+0.2f'|format(etf_monthly_summary.month_cumulative_pct) }}%`
+- 首日 (`{{ etf_monthly_summary.first_day }}`)：`{{ '%+0.2f'|format(etf_monthly_summary.first_day_pct) }}%`
+- 末日 (`{{ etf_monthly_summary.last_day }}`)：`{{ '%+0.2f'|format(etf_monthly_summary.last_day_pct) }}%`
+- 月内最高单日：`{{ etf_monthly_summary.high_day }}` `{{ '%+0.2f'|format(etf_monthly_summary.high_pct) }}%`
+- 月内最低单日：`{{ etf_monthly_summary.low_day }}` `{{ '%+0.2f'|format(etf_monthly_summary.low_pct) }}%`
+{% else %}
+- _本月 ETF 512400 NAV 数据缺失，无法汇总。_
+{% endif %}
+
+---
+
+## 5. 下月观察
+
+> 月末仍在最后一周保持 ≥3 次出现的主题，下月值得继续跟踪。这是延续提示，**不是预测**。
+
+{% for line in forecast_bullets %}
+- {{ line }}
+{% endfor %}
+
+---
+
+## 本月构成 / Monthly constituents
+
+### 每日简报
+
+| 日期 | 文件 | 政策信号数 | 库存信号数 | ETF 日收益 |
+|---|---|---|---|---|
+{% for b in briefs_aggregated %}
+| {{ b.date }} | [{{ b.filename }}](../briefs/{{ b.filename }}) | {{ b.policy_count }} | {{ b.inventory_count }} | {{ '%+0.2f'|format(b.etf_daily_pct) ~ '%' if b.etf_daily_pct is not none else '—' }} |
+{% endfor %}
+
+### 周度回顾
+
+{% if digests_aggregated %}
+| 周次 | 区间 | 文件 | 主题数 | 反转数 | ETF 周累计 |
+|---|---|---|---|---|---|
+{% for d in digests_aggregated %}
+| {{ d.stem }} | {{ d.week_start }} → {{ d.week_end }} | [{{ d.filename }}]({{ d.filename }}) | {{ d.themes_count }} | {{ d.inflections_count }} | {{ '%+0.2f'|format(d.etf_weekly_pct) ~ '%' if d.etf_weekly_pct is not none else '—' }} |
+{% endfor %}
+{% else %}
+_本月无可用周度回顾——可能 monthly 早于 weekly 节奏启动。_
+{% endif %}
+
+{% if notes %}
+> 备注：
+{% for note in notes %}
+> - {{ note }}
+{% endfor %}
+{% endif %}
+
+---
+
+## 元信息
+
+- 月份：`{{ month_label }}`
+- 区间：`{{ month_start }} → {{ month_end }}` (calendar month)
+- 聚合方式：deterministic rule-based digest（v0.11 暂不接入 LLM 合成；可选 `--with-llm` 生成英文 sibling）
+- 上游：output/briefs + output/digests 内已存在的 CN 简报 / 周报
+
+> Disclaimer：本月回顾不构成投资建议。所有信号来自公开数据源 + 自建 alt-data pipeline，仅供研究与教学讨论。

@@ -301,16 +301,17 @@ RUN_PUBLISH_AFTER_DIGEST=0 bash scripts/weekly_digest_now.sh
 ### 8.4 Install / uninstall the Friday job
 
 ```bash
-# Installs BOTH the daily and the weekly launchd agents in one call.
+# v0.11: installs ALL THREE launchd agents in one call (daily / weekly / monthly).
 bash scripts/install_launchd_macos.sh
 
-# Removes both.
+# Removes all three.
 bash scripts/uninstall_launchd_macos.sh
 
 # Verify queued jobs:
 launchctl list | grep cn-altdata
 #  com.leonardodon.cn-altdata-brief
 #  com.leonardodon.cn-altdata-brief.weekly
+#  com.leonardodon.cn-altdata-brief.monthly
 ```
 
 ### 8.5 What a digest contains
@@ -331,3 +332,96 @@ No LLM call is made in any of these five sections — the synthesis is
 fully reproducible from the same 5 daily-brief markdown files. The
 `--with-llm` flag re-uses the v0.8 translator only to produce an EN
 sibling.
+
+## 9. v0.11 — 上月回顾 / Monthly digest (1st-of-month cadence)
+
+v0.11 closes the cadence trilogy: daily (~17:00 weekdays) →
+weekly (Friday 18:00) → **monthly (1st of month 17:00)**. Where the
+weekly digest tracks *tactics*, the monthly digest tracks *strategic
+frame*:
+
+- **Multi-week sustained themes** — industries that appeared on
+  ≥12 distinct trading days of the month (so they ran through
+  multiple weeks, not just one).
+- **Within-month reversal events** — the v0.9 inflection detector
+  re-run over a ~20-day window, plus a `flips_in_month` count so a
+  signal that wobbled all month outranks one that flipped once at
+  month-end.
+- **Long-term cumulative impact** — same primitive as the weekly, just
+  with a longer window.
+- **ETF month-over-month change** — first/last day moves, plus
+  intramonth high/low (with dates).
+- **下月观察** — deterministic "carry-forward" forecast: sustained
+  themes whose last-week occurrence count is still ≥3.
+
+### 9.1 Generate manually
+
+```bash
+# Default: aggregate LAST month (matches the 1st-of-next-month cadence).
+uv run cn-altdata-brief monthly-digest
+
+# Explicit month (YYYY-MM):
+uv run cn-altdata-brief monthly-digest --month-of 2026-04
+
+# Or a YYYY-MM-DD date inside the target month:
+uv run cn-altdata-brief monthly-digest --month-of 2026-04-15
+
+# Raise the sustained-theme bar (default 12 days) for harsher filtering:
+uv run cn-altdata-brief monthly-digest --sustained-threshold 15
+
+# Emit an EN sibling alongside the CN file (reuses v0.8 translator):
+uv run cn-altdata-brief monthly-digest --with-llm
+```
+
+Outputs:
+
+- `output/digests/<YYYY-MM>.md` (e.g. `2026-04.md`) — CN ground truth.
+- `output/digests/<YYYY-MM>.en.md` — optional EN sibling.
+
+The monthly digest sits in the **same** `output/digests/` directory as
+the weekly digests; the filename shape (`2026-04` vs `2026-W18`)
+disambiguates the cadence. Both are shipped to `gh-pages:digests/` on
+every publish.
+
+### 9.2 Schedule (launchd)
+
+`scripts/install_launchd_macos.sh` now installs **three** LaunchAgents:
+
+| Label | Cadence |
+|---|---|
+| `com.leonardodon.cn-altdata-brief` | Mon-Fri 17:00 (daily) |
+| `com.leonardodon.cn-altdata-brief.weekly` | Fri 18:00 (weekly) |
+| `com.leonardodon.cn-altdata-brief.monthly` | 1st of month 17:00 |
+
+The monthly plist fires on every `Day=1`. The wrapper script
+(`scripts/monthly_digest_now.sh`) detects Sat/Sun and **defers to the
+next Monday** so the published monthly digest never lands on a
+weekend. Override with `MONTHLY_DEFER_WEEKENDS=0`.
+
+### 9.3 Run the wrapper without waiting
+
+```bash
+# Run the same script the launchd job runs (without waiting for the 1st):
+bash scripts/monthly_digest_now.sh
+
+# Back-fill an older month:
+MONTHLY_OF=2026-03 bash scripts/monthly_digest_now.sh
+
+# Don't chain publish (offline mode):
+RUN_PUBLISH_AFTER_DIGEST=0 bash scripts/monthly_digest_now.sh
+```
+
+### 9.4 gh-pages integration
+
+The publisher copies every `digests/<YYYY-MM>*.md` (and `<YYYY-Www>*.md`)
+to the gh-pages branch and renders **three** tables on the landing
+page:
+
+1. **简报列表 / Briefs archive** — every daily brief with chart thumbnail.
+2. **本周回顾 / Weekly digests** — every weekly digest.
+3. **上月回顾 / Monthly digests** — every monthly digest. _(NEW in v0.11)_
+
+The RSS / Atom feeds also include monthly items, with a
+`[Monthly]` title prefix, `cn-altdata-brief:monthly:` GUID, and
+`<category>monthly-digest</category>` so subscribers can filter on
+cadence.
