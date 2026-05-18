@@ -500,6 +500,10 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
+    try:
+        languages = _parse_languages(args)
+    except SystemExit as exc:
+        return int(exc.code or 1)
 
     briefs_dir = Path(args.briefs_dir)
     charts_root = Path(args.charts_dir) / date
@@ -578,7 +582,6 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     # additional languages are produced from the CN markdown. We pass
     # the deterministic CN file (not in-memory string) so the translation
     # input is reproducible by hand from disk.
-    languages = _parse_languages(args)
     translation_paths: list[Path] = []
     translation_results: dict[str, TranslationResult] = {}
     for lang in languages:
