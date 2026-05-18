@@ -10,9 +10,9 @@
 ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-%F0%9F%9F%A2%20ready-2da44e)
 
 `cn-altdata-brief` 是一个每个交易日自动生成的另类数据研究简报，
-合成自我自己运行的 6 个量化项目的真实信号缓存。它是一份**可订阅、可引用、可复现**的中国 A 股 alt-data 视角。
+合成自 4 个已公开摘要/快照数据源的真实信号。它是一份**可订阅、可引用、可复现**的中国 A 股 alt-data 视角。
 
-`cn-altdata-brief` produces a daily, deterministic research brief over China-equity alt-data — synthesized from 4 of the 6 quant projects I run locally. The goal is content-as-distribution: my own tools, made visible.
+`cn-altdata-brief` produces a daily, deterministic research brief over China-equity alt-data — synthesized from four public-source adapters I maintain. The goal is content-as-distribution: my own tools, made visible.
 
 ---
 
@@ -34,9 +34,9 @@
 
 ## 2. 为什么有它 / Why it exists
 
-中文金融内容里，**主观评论是过剩的、可复现的数据视角是稀缺的**。我自己跑了 6 套量化工具，每个项目都自带 cache JSON 和评级面板，但它们只服务于我一个人——这是浪费。
+中文金融内容里，**主观评论是过剩的、可复现的数据视角是稀缺的**。我自己跑的量化工具已经能吐出 public-summary JSON / public snapshot，但它们如果只留在各自仓库里，就很难被读者连续消费。
 
-`cn-altdata-brief` 把这 6 套工具拼成一份每日刊：
+`cn-altdata-brief` 目前把 4 个公开可读的数据面拼成一份每日刊：
 
 - 对**读者**：免费拿到一份来源可查的 alt-data 速报，不必再听"专家说"
 - 对**我**：把分散的项目串成一个内容产品线，是付费订阅的 v0，也是外包询盘的展示作品
@@ -63,18 +63,16 @@
 
 ## 4. 数据源 = 我的项目组合 / The data sources are my portfolio
 
-`cn-altdata-brief` **不持有任何金融数据**——它只读取我已有 6 个项目的 cache。这等同于把整套工具栈展开给读者看：
+`cn-altdata-brief` **不持有任何金融数据**——它只读取上游仓库已经公开的 summary/snapshot 文件。这等同于把整套工具栈里适合公开展示的部分展开给读者看：
 
 | 项目 | 角色 | 我的另一个 GitHub repo |
 |---|---|---|
 | `super-pricing-system` | 政策雷达 + 宏观高频 | `Leonard-Don/super-pricing-system` |
 | `quant-trading-system` | 行业热度 + 政策叠加 | `Leonard-Don/quant-trading-system` |
 | `index-inclusion-research` | CMA 7 条假说裁决 + PAP guard | `Leonard-Don/index-inclusion-research` |
-| `ETF 512400` | 非铁金属 ETF 实时快照 | `Leonard-Don/ETF-512400` |
-| `Yieldwise` | 利率曲线 (v0.2 接入) | `Leonard-Don/yieldwise` |
-| `TianXianQuant Android` | 移动端实验 (v0.1 跳过) | `Leonard-Don/TianXianQuant` |
+| `ETF 512400` | 非铁金属 ETF 实时快照（public snapshot） | `Leonard-Don/ETF-512400` |
 
-读者从一份简报顺藤摸瓜，能看到我所有项目的当前状态——这是"内容即分发"。
+YieldWise / Android 等其它实验项目暂不进入当前 4-source brief surface，避免把未公开或未收口的信号混进日报。读者从一份简报顺藤摸瓜，能看到这些公开数据源的当前状态——这是"内容即分发"。
 
 ## 5. 示例简报 / Sample brief
 
@@ -120,7 +118,7 @@ uv run cn-altdata-brief generate                     # auto: live → public →
 uv run cn-altdata-brief generate --source-mode public  # CI mode, public summaries only
 ```
 
-生成结果落在 `output/briefs/YYYY-MM-DD.md`、`output/charts/YYYY-MM-DD/*.png` 与 `output/feed.xml`。
+生成结果落在 `output/briefs/YYYY-MM-DD.md`、`output/charts/YYYY-MM-DD/*.png`、`output/feed.xml` 与 `output/feed.atom`。周报/月报落在 `output/digests/` 并由同一个 publisher 发布。
 发布/CI 场景请使用 `uv run cn-altdata-brief validate --fail-on-warn`，把 WARN 也升级为阻断。
 
 ### 可选 LLM 改写 / Optional LLM rephrase
@@ -176,7 +174,7 @@ uv run cn-altdata-brief generate --with-llm --languages CN,EN
 
 ```mermaid
 flowchart LR
-    subgraph upstream[上游 6 项目]
+    subgraph upstream[上游 4 个公开数据源]
         SP[super-pricing-system<br/>data/public/alt_data_summary.json]
         QT[quant-trading-system<br/>data/public/quant_summary.json]
         IX[index-inclusion-research<br/>data/public/index_research_summary.json]
@@ -243,7 +241,7 @@ tail -f output/launchd_runs.log
 
 ### v0.6 — gh-pages 自动发布 / Public live site
 
-v0.6 起，每次 generate 之后会自动把 brief + charts + RSS feed 推到 `gh-pages` 分支，由 GitHub Pages 渲染成静态站点：
+v0.6 起，每次 generate 之后会自动把 brief + charts + RSS/Atom feeds 推到 `gh-pages` 分支；v0.11 同一路径也会带上 weekly/monthly digests，由 GitHub Pages 渲染成静态站点：
 
 > **Live URL**: [https://leonard-don.github.io/cn-altdata-brief/](https://leonard-don.github.io/cn-altdata-brief/) _(占位 / placeholder — once you run `gh repo create` + enable Pages, this is where readers land)_
 
@@ -262,6 +260,9 @@ uv run cn-altdata-brief publish --no-push
 
 # launchd 链式 publish 默认开启；临时关闭：
 RUN_PUBLISH_AFTER_GENERATE=0 bash scripts/run_now.sh
+
+# GitHub Actions 每日计划任务默认只 generate + publish dry-run；
+# 手动 Run workflow 并把 publish=true 才会推送 gh-pages。
 ```
 
 整套设置（含 `gh repo create` + GitHub Pages source 切换）见 [docs/PUBLISHING.md](docs/PUBLISHING.md)。

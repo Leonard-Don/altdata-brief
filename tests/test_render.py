@@ -74,6 +74,9 @@ def test_render_full_brief_contains_all_five_sections(
     assert "llm_requested: false" in md
     assert "llm_rephrase_used: false" in md
     assert "默认不调用 LLM" in md
+    assert "4 个公开摘要/快照数据源" in md
+    assert "6 个项目组合" not in md
+    assert "4 个本地量化项目" not in md
 
 
 def test_render_brief_with_llm_polished_observation_keeps_raw_audit(
@@ -165,6 +168,8 @@ def test_render_site_index_empty_folder(tmp_path: Path) -> None:
     path = render_site_index(tmp_path)
     text = path.read_text(encoding="utf-8")
     assert "暂无简报" in text
+    assert "4 个公开摘要/快照数据源" in text
+    assert "6 个量化项目" not in text
 
 
 def test_render_site_index_with_briefs(tmp_path: Path) -> None:

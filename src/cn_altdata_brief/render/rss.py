@@ -32,7 +32,7 @@ from xml.etree import ElementTree as ET
 
 CHANNEL_TITLE = "CN AltData Brief"
 CHANNEL_DESCRIPTION = (
-    "Daily research brief synthesizing alt-data signals from a portfolio of 6 quant projects."
+    "Daily research brief synthesizing alt-data signals from 4 public source adapters."
 )
 DEFAULT_SITE_URL = "https://leonard-don.github.io/cn-altdata-brief"
 # Channel-level language stays zh-CN because Chinese is the ground

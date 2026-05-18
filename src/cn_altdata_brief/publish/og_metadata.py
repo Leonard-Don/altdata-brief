@@ -220,8 +220,8 @@ def _extract_description(brief_md: str) -> str:
             text = line
         return _truncate(text, _DESCRIPTION_MAX_CHARS)
     return (
-        "Daily research brief synthesizing alt-data signals from a portfolio "
-        "of 6 quant projects."
+        "Daily research brief synthesizing alt-data signals from 4 public "
+        "source adapters."
     )
 
 

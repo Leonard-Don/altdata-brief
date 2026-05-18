@@ -34,4 +34,4 @@
 
 - **数据合规**：所有数据均来自公开 API + 自建 alt-data，简报每段附 source label，无未授权第三方数据。
 - **可持续性**：v0.4 仍完全 deterministic，单人运行成本接近 0；LLM 仅作为未来 v0.5 的可选润色层。
-- **冷启动**：靠 6 个项目的 README 互链 + Boss/Upwork 简介挂展示链接，先到 200 读者再谈付费。
+- **冷启动**：靠 4 个 public-source 仓库的 README 互链 + Boss/Upwork 简介挂展示链接，先到 200 读者再谈付费。
