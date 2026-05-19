@@ -255,9 +255,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Also run the v0.12 content-quality checks: fingerprint freshness, "
-            "signal density, cross-source consistency, schema regression. "
+            "signal density, cross-source consistency, schema regression, "
+            "placeholder detector (ERROR-level), and temporal coherence. "
             "Equivalent to --check-fingerprint --check-density --check-consistency "
-            "--check-schema. Default validate keeps backward-compat with v0.2."
+            "--check-schema --check-placeholder --check-temporal. Default "
+            "validate keeps backward-compat with v0.2."
         ),
     )
     val.add_argument(
@@ -279,6 +281,24 @@ def _build_parser() -> argparse.ArgumentParser:
         "--check-schema",
         action="store_true",
         help="Run only the schema_regression check (subset of --strict).",
+    )
+    val.add_argument(
+        "--check-placeholder",
+        action="store_true",
+        help=(
+            "Run only the placeholder_detector check (subset of --strict). "
+            "FAILs the pipeline when a payload string matches a known "
+            "placeholder pattern (e.g. '测试', 'TODO', 'placeholder')."
+        ),
+    )
+    val.add_argument(
+        "--check-temporal",
+        action="store_true",
+        help=(
+            "Run only the temporal_coherence check (subset of --strict). "
+            "Warns when day-over-day signal flips exceed the threshold "
+            "without a declared regime_change_event."
+        ),
     )
     val.add_argument(
         "-v", "--verbose", action="store_true", help="Verbose logging (subcommand-scoped alias)."
@@ -803,13 +823,22 @@ def _strict_includes_from_args(args: argparse.Namespace) -> tuple[str, ...] | No
     per-check flags.
     """
     if getattr(args, "strict", False):
-        return ("fingerprint", "density", "consistency", "schema")
+        return (
+            "fingerprint",
+            "density",
+            "consistency",
+            "schema",
+            "placeholder",
+            "temporal",
+        )
     subset: list[str] = []
     for flag, key in (
         ("check_fingerprint", "fingerprint"),
         ("check_density", "density"),
         ("check_consistency", "consistency"),
         ("check_schema", "schema"),
+        ("check_placeholder", "placeholder"),
+        ("check_temporal", "temporal"),
     ):
         if getattr(args, flag, False):
             subset.append(key)
