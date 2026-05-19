@@ -15,9 +15,9 @@
 # example a stale ETF snapshot) are logged but do not stop local generation.
 #
 # v0.12 adds an opt-in content-quality pass. Set CN_ALTDATA_BRIEF_STRICT=1
-# in the environment to add --strict to the pre-flight validate call:
-# fingerprint, density, consistency, and schema checks run; a FAIL in
-# any of those aborts the brief before publishing.
+# in the environment to add --strict --fail-on-warn to the pre-flight
+# validate call: fingerprint, density, consistency, and schema checks run;
+# any WARN/FAIL or validator runtime error aborts before publishing.
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -36,8 +36,8 @@ uv sync --quiet
 # additionally runs the v0.12 content-quality checks before generation.
 validate_args=()
 if [[ "${CN_ALTDATA_BRIEF_STRICT:-0}" == "1" ]]; then
-    validate_args+=(--strict)
-    echo "[generate_daily] pre-flight validate --strict ..."
+    validate_args+=(--strict --fail-on-warn)
+    echo "[generate_daily] pre-flight validate --strict --fail-on-warn ..."
 else
     echo "[generate_daily] pre-flight validate ..."
 fi
@@ -45,6 +45,10 @@ set +e
 uv run cn-altdata-brief validate "${validate_args[@]}"
 rc=$?
 set -e
+if [[ "${CN_ALTDATA_BRIEF_STRICT:-0}" == "1" && "$rc" -ne 0 ]]; then
+    echo "[generate_daily] strict validate FAILED/WARNED (exit=$rc); aborting before publish."
+    exit "$rc"
+fi
 if [ "$rc" -ge 2 ]; then
     echo "[generate_daily] validate FAILED (exit=$rc); aborting before publish."
     exit "$rc"

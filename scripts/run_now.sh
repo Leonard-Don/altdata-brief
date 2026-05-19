@@ -76,26 +76,24 @@ else
 fi
 
 # v0.12 — pre-publish content-quality guard.
-# When CN_ALTDATA_BRIEF_STRICT=1, run the v0.12 quality checks. A FAIL
-# (exit code 2) aborts the publish step so we don't ship a brief whose
-# inputs failed structural / content sanity. The locally generated brief
-# is kept on disk so the operator can inspect and decide.
+# When CN_ALTDATA_BRIEF_STRICT=1, run the v0.12 quality checks with
+# --fail-on-warn. Any non-zero exit (WARN, FAIL, or validator runtime
+# failure) aborts the publish step so we don't ship a brief whose inputs
+# failed structural / content sanity. The locally generated brief is kept
+# on disk so the operator can inspect and decide.
 strict_block_publish=0
 if [[ "${CN_ALTDATA_BRIEF_STRICT:-0}" == "1" ]]; then
     set +e
-    uv run cn-altdata-brief validate --strict >>"${LOG_PATH}" 2>&1
+    uv run cn-altdata-brief validate --strict --fail-on-warn >>"${LOG_PATH}" 2>&1
     strict_rc=$?
     set -e
-    if [[ "${strict_rc}" -eq 2 ]]; then
+    if [[ "${strict_rc}" -ne 0 ]]; then
         msg="validate --strict FAILED (exit=${strict_rc}); aborting publish, brief kept on disk"
         echo "[$(stamp)] ERROR ${msg}" | tee -a "${LOG_PATH}"
         if [[ "$(uname -s)" == "Darwin" ]]; then
             osascript -e "display notification \"${msg}\" with title \"cn-altdata-brief\"" || true
         fi
         strict_block_publish=1
-    elif [[ "${strict_rc}" -ne 0 ]]; then
-        echo "[$(stamp)] WARN validate --strict surfaced WARN (exit=${strict_rc}); publishing anyway" \
-            | tee -a "${LOG_PATH}"
     else
         echo "[$(stamp)] strict guard OK (exit=0)" | tee -a "${LOG_PATH}"
     fi

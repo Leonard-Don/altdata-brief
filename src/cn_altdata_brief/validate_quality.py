@@ -174,7 +174,7 @@ def _normalize_policy_records_for_fingerprint(
                 {
                     "industry": str(name),
                     "signal": str(info.get("signal", "")),
-                    "impact": round(float(info.get("avg_impact", 0.0) or 0.0), 4),
+                    "impact": round(_safe_float(info.get("avg_impact")), 4),
                 }
             )
         normalized.sort(key=lambda r: r["industry"])
@@ -188,7 +188,7 @@ def _normalize_policy_records_for_fingerprint(
                 {
                     "industry": str(row.get("industry", "")),
                     "signal": str(row.get("signal", "")),
-                    "impact": round(float(row.get("avg_impact", 0.0) or 0.0), 4),
+                    "impact": round(_safe_float(row.get("avg_impact")), 4),
                 }
             )
         normalized.sort(key=lambda r: r["industry"])
@@ -243,6 +243,20 @@ def _inclusive_day_span(first: str, last: str) -> int:
     except ValueError:
         return 1
     return max(1, (d2 - d1).days + 1)
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    """Best-effort numeric coercion used by validators.
+
+    Upstream public summaries occasionally carry placeholders such as
+    ``"N/A"``. Treat those as ``default`` so validation returns a structured
+    CheckResult/JSON payload instead of crashing with ``ValueError``.
+    """
+    try:
+        out = float(value if value is not None else default)
+    except (TypeError, ValueError):
+        return default
+    return default if math.isnan(out) else out
 
 
 def check_content_fingerprint_freshness(

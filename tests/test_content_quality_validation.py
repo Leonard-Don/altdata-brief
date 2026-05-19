@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from cn_altdata_brief import cli as cli_mod
 from cn_altdata_brief import validate_quality as vq
 from cn_altdata_brief.adapters.base import AdapterPayload
 from cn_altdata_brief.cli import main
@@ -411,6 +412,77 @@ def test_strict_handles_empty_payloads_gracefully(tmp_path: Path) -> None:
     assert levels["signal_density"] == WARN
     assert levels["cross_source_consistency"] == INFO
     assert levels["content_fingerprint_freshness"] == INFO
+
+
+# ---------------------------------------------------------------------------
+# 7. CLI integration: --strict flag adds the four checks
+# ---------------------------------------------------------------------------
+
+
+def test_fingerprint_normalization_tolerates_nonnumeric_impact() -> None:
+    """Placeholder avg_impact values should hash as 0.0, not crash."""
+    rows = vq._normalize_policy_records_for_fingerprint(
+        _super_pricing_payload(
+            signals=[{"industry": "电网", "avg_impact": "N/A", "signal": "neutral"}]
+        )
+    )
+    assert rows == [{"industry": "电网", "signal": "neutral", "impact": 0.0}]
+
+
+class _FakeResolution:
+    def to_dict(self) -> dict[str, str]:
+        return {"mode": "test", "available": "true"}
+
+
+class _FakeAdapter:
+    def __init__(self, payload: AdapterPayload | None) -> None:
+        self._payload = payload
+
+    def fetch(self) -> AdapterPayload | None:
+        return self._payload
+
+
+def test_cli_validate_strict_nonnumeric_policy_json_no_traceback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Strict validate should emit structured JSON for bad avg_impact strings."""
+    monkeypatch.setattr(vq, "DEFAULT_FINGERPRINT_HISTORY", tmp_path / "fp.json")
+    bad_super_pricing = _super_pricing_payload(
+        signals=[{"industry": "电网", "avg_impact": "N/A", "signal": "neutral"}],
+        metals=[{"metal": "copper", "name_cn": "铜", "price_change_pct": 1.0}],
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "build_default_adapters",
+        lambda config: {"super_pricing": _FakeAdapter(bad_super_pricing)},
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "resolve_all_sources",
+        lambda adapters: {"super_pricing": _FakeResolution()},
+    )
+
+    code = main(["validate", "--strict", "--json"])
+    captured = capsys.readouterr()
+    parsed = json.loads(captured.out)
+    names = {check["name"] for check in parsed["checks"]}
+
+    assert "content_fingerprint_freshness" in names
+    assert code in (EXIT_OK, EXIT_WARN, EXIT_FAIL)
+    assert "Traceback" not in captured.err
+
+
+def test_strict_shell_guards_use_fail_on_warn() -> None:
+    """Strict launch paths must not treat validator runtime failures as WARN-only."""
+    root = vq._PROJECT_ROOT
+    generate_daily = (root / "scripts" / "generate_daily.sh").read_text(encoding="utf-8")
+    run_now = (root / "scripts" / "run_now.sh").read_text(encoding="utf-8")
+
+    assert "--strict --fail-on-warn" in generate_daily
+    assert "--strict --fail-on-warn" in run_now
+    assert '"${strict_rc}" -ne 0' in run_now
 
 
 # ---------------------------------------------------------------------------
