@@ -273,9 +273,13 @@ def test_rss_feed_emits_enclosure_and_categories(tmp_path: Path) -> None:
 def test_feed_escapes_adversarial_description_cdata_and_html(tmp_path: Path) -> None:
     briefs = tmp_path / "briefs"
     briefs.mkdir()
+    # Sentinel tokens use single letters around the underscored payload
+    # so the markdown ``__bold__`` stripper (now applied to feed text
+    # to avoid leaking ``**bold**`` markers to readers) does not eat
+    # them — we still want to verify CDATA escaping integrity here.
     adversarial = """# CN AltData Brief — 2026-05-17
 
-- **注入测试**：safe ]]> __CDATA_OPEN__ __CDATA_CLOSE__ <script>alert(1)</script> & <b>raw</b>
+- **注入测试**：safe ]]> xCDATA_OPENx xCDATA_CLOSEx <script>alert(1)</script> & <b>raw</b>
 """
     (briefs / "2026-05-17.md").write_text(adversarial, encoding="utf-8")
 
@@ -291,7 +295,7 @@ def test_feed_escapes_adversarial_description_cdata_and_html(tmp_path: Path) -> 
     rss_root = ET.parse(rss_path).getroot()
     rss_desc = rss_root.findtext("channel/item/description") or ""
     assert "]]>" in rss_desc
-    assert "__CDATA_OPEN__" in rss_desc
+    assert "xCDATA_OPENx" in rss_desc
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rss_desc
     assert "<script>" not in rss_desc
 
@@ -309,7 +313,7 @@ def test_feed_escapes_adversarial_description_cdata_and_html(tmp_path: Path) -> 
     atom_content = atom_root.findtext(f"{ns}entry/{ns}content") or ""
     assert atom_content.startswith("<p>")
     assert "]]>" in atom_content
-    assert "__CDATA_CLOSE__" in atom_content
+    assert "xCDATA_CLOSEx" in atom_content
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in atom_content
     assert "<script>" not in atom_content
 

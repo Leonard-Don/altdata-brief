@@ -469,8 +469,15 @@ def _extract_first_paragraph(brief_md: str) -> str:
 
     Strips leading YAML frontmatter (``---\\n…\\n---``), metadata
     blockquote (the auto-generated subtitle), and section headings so
-    the description starts with substantive text.
+    the description starts with substantive text. Markdown emphasis
+    (``**bold**`` / ``*italic*`` / ``__bold__`` / `` `code` ``) is
+    stripped so feed readers don't render the literal asterisks — the
+    same idempotent stripper used by OG/Twitter Card descriptions.
     """
+    # Lazy import — keeps render.rss importable in isolation (avoids a
+    # potential circular import if publish ever depends on render.rss).
+    from cn_altdata_brief.publish.og_metadata import _strip_md_emphasis
+
     skip_prefixes = ("#", ">", "---", "![", "**Sources:**", "**来源：**", "{%", "<!--")
     lines = brief_md.splitlines()
     start = 0
@@ -486,8 +493,8 @@ def _extract_first_paragraph(brief_md: str) -> str:
         if line.startswith(skip_prefixes):
             continue
         if line.startswith("- "):
-            return line.lstrip("- ").strip()
-        return line
+            return _strip_md_emphasis(line.lstrip("- ").strip())
+        return _strip_md_emphasis(line)
     return ""
 
 

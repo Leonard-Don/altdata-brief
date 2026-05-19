@@ -338,15 +338,53 @@ def test_index_md_renders_5_row_table() -> None:
     # Newest first
     assert rows[0].startswith("| 2026-05-17")
     assert rows[-1].startswith("| 2026-05-13")
-    # Each row links into briefs/
+    # Each row links into briefs/ — the link target is the Jekyll-rendered
+    # ``.html`` (not the raw ``.md``) so clicks don't 404 on Pages.
     for r in rows:
-        assert "briefs/" in r and ".md)" in r
+        assert "briefs/" in r and ".html)" in r
+        assert ".md)" not in r
 
 
 def test_index_md_empty_archive_has_placeholder() -> None:
     body = _render_index_md([])
     assert "_暂无" in body
     assert "自动刷新检查中" in body
+
+
+def test_index_md_archive_links_use_html_extension_and_stem_text() -> None:
+    """Regression: Jekyll on GitHub Pages renames ``briefs/<stem>.md`` →
+    ``briefs/<stem>.html`` for serving. The archive table linked to the
+    raw ``.md``, which 404s on Pages. The fix points the link at
+    ``.html`` and drops the extension from the visible link text so
+    readers don't see implementation detail.
+    """
+    body = _render_index_md(
+        ["2026-05-17", "2026-05-16"],
+        languages_per_date={"2026-05-17": ["cn", "en"], "2026-05-16": ["cn"]},
+        digest_stems=["2026-W20"],
+        languages_per_digest={"2026-W20": ["cn", "en"]},
+        monthly_stems=["2026-04"],
+        languages_per_monthly={"2026-04": ["cn", "en"]},
+    )
+    # Daily briefs: CN + EN link to ``.html``, link text drops extension.
+    assert "[2026-05-17](briefs/2026-05-17.html)" in body
+    assert "[2026-05-17.en](briefs/2026-05-17.en.html)" in body
+    assert "[2026-05-16](briefs/2026-05-16.html)" in body
+    # Weekly + monthly digests use the same shape.
+    assert "[2026-W20](digests/2026-W20.html)" in body
+    assert "[2026-W20.en](digests/2026-W20.en.html)" in body
+    assert "[2026-04](digests/2026-04.html)" in body
+    assert "[2026-04.en](digests/2026-04.en.html)" in body
+    # No ``.md`` links anywhere in the archive tables.
+    archive_lines = [
+        line
+        for line in body.splitlines()
+        if line.startswith("| 2026-")
+    ]
+    for line in archive_lines:
+        assert ".md)" not in line, (
+            f"archive row links to .md (will 404 on Pages): {line!r}"
+        )
 
 
 def test_real_template_enables_realtime_refresh_for_pages() -> None:
@@ -552,7 +590,9 @@ def test_daily_brief_language_siblings_publish_contract(
     assert "briefs/2026-05-17.private.md" not in tree_entries
 
     index = _git(tmp_repo, "show", "gh-pages:index.md")
-    assert "[2026-05-17.en.md](briefs/2026-05-17.en.md)" in index
+    # Archive links point to Jekyll-rendered ``.html`` with stems-only text.
+    assert "[2026-05-17.en](briefs/2026-05-17.en.html)" in index
+    assert "[2026-05-17.en.md](briefs/2026-05-17.en.md)" not in index
 
 
 def test_existing_gh_pages_draft_daily_leaks_are_pruned(
@@ -706,8 +746,9 @@ def test_v011_digest_language_siblings_publish_contract(
     assert "digests/2026-04.draft.md" not in tree_entries
 
     index = _git(tmp_repo, "show", "gh-pages:index.md")
-    assert "[2026-W20.en.md](digests/2026-W20.en.md)" in index
-    assert "[2026-04.en.md](digests/2026-04.en.md)" in index
+    # Archive links target Jekyll-rendered HTML.
+    assert "[2026-W20.en](digests/2026-W20.en.html)" in index
+    assert "[2026-04.en](digests/2026-04.en.html)" in index
 
 
 def test_v011_existing_gh_pages_draft_digest_leaks_are_pruned(

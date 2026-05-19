@@ -961,9 +961,13 @@ def _render_index_md(
                 )
             else:
                 preview_cell = "—"
-            cn_cell = f"[{stem}.md](briefs/{stem}.md)"
+            # Link targets the Jekyll-rendered HTML (``briefs/<stem>.html``)
+            # not the raw ``.md`` source — Pages serves the rendered file
+            # and visiting the ``.md`` URL returns 404. Link text drops
+            # the extension so readers don't see implementation detail.
+            cn_cell = f"[{stem}](briefs/{stem}.html)"
             if "en" in langs:
-                en_cell = f"[{stem}.en.md](briefs/{stem}.en.md)"
+                en_cell = f"[{stem}.en](briefs/{stem}.en.html)"
             else:
                 en_cell = "—"
             lines.append(
@@ -979,9 +983,10 @@ def _render_index_md(
     else:
         for stem in digest_stems or []:
             langs = (languages_per_digest or {}).get(stem, [])
-            cn_cell = f"[{stem}.md](digests/{stem}.md)"
+            # Link to the Jekyll-rendered HTML, drop extension from text.
+            cn_cell = f"[{stem}](digests/{stem}.html)"
             if "en" in langs:
-                en_cell = f"[{stem}.en.md](digests/{stem}.en.md)"
+                en_cell = f"[{stem}.en](digests/{stem}.en.html)"
             else:
                 en_cell = "—"
             lines.append(f"| {stem} | {cn_cell} | {en_cell} |")
@@ -995,9 +1000,10 @@ def _render_index_md(
     else:
         for stem in monthly_stems or []:
             langs = (languages_per_monthly or {}).get(stem, [])
-            cn_cell = f"[{stem}.md](digests/{stem}.md)"
+            # Link to the Jekyll-rendered HTML, drop extension from text.
+            cn_cell = f"[{stem}](digests/{stem}.html)"
             if "en" in langs:
-                en_cell = f"[{stem}.en.md](digests/{stem}.en.md)"
+                en_cell = f"[{stem}.en](digests/{stem}.en.html)"
             else:
                 en_cell = "—"
             lines.append(f"| {stem} | {cn_cell} | {en_cell} |")
