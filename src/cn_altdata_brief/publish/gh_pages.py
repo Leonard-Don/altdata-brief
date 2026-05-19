@@ -46,6 +46,7 @@ import logging
 import re
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -405,67 +406,74 @@ class GhPagesPublisher:
             )
 
         try:
-            if the_plan.will_create_orphan:
-                # ``_create_orphan_branch`` leaves HEAD pointing at the
-                # new orphan branch with a clean worktree — no extra
-                # checkout needed.
-                self._create_orphan_branch(the_plan.branch)
-            else:
-                self._git("checkout", the_plan.branch)
-
-            self._copy_into_worktree(the_plan)
-            self._overlay_template()
-            self._write_index_md(
-                the_plan.index_briefs,
-                the_plan.index_digests,
-                the_plan.index_monthlies,
-            )
-
-            self._git("add", "-A")
-            if not self._has_staged_changes():
-                # Idempotent rerun — nothing new to publish. We let
-                # the ``finally`` clause handle the branch restore so
-                # this path stays consistent with the success path.
-                msg = (
-                    f"no changes for {date_str}; gh-pages already up-to-date"
+            with tempfile.TemporaryDirectory(prefix="cn-altdata-publish-") as tmp:
+                staging_root = Path(tmp)
+                staged_plan = self._stage_plan_sources(the_plan, staging_root / "sources")
+                staged_template_dir = self._stage_template_dir(
+                    staging_root / "gh-pages-template"
                 )
-                logger.info(msg)
+
+                if the_plan.will_create_orphan:
+                    # ``_create_orphan_branch`` leaves HEAD pointing at the
+                    # new orphan branch with a clean worktree — no extra
+                    # checkout needed.
+                    self._create_orphan_branch(the_plan.branch)
+                else:
+                    self._git("checkout", the_plan.branch)
+
+                self._copy_into_worktree(staged_plan)
+                self._overlay_template(staged_template_dir)
+                self._write_index_md(
+                    the_plan.index_briefs,
+                    the_plan.index_digests,
+                    the_plan.index_monthlies,
+                )
+
+                self._git("add", "-A")
+                if not self._has_staged_changes():
+                    # Idempotent rerun — nothing new to publish. We let
+                    # the ``finally`` clause handle the branch restore so
+                    # this path stays consistent with the success path.
+                    msg = (
+                        f"no changes for {date_str}; gh-pages already up-to-date"
+                    )
+                    logger.info(msg)
+                    return PublishResult(
+                        plan=the_plan,
+                        dry_run=False,
+                        pushed=False,
+                        commit_sha=None,
+                        original_branch=original_branch,
+                        message=msg,
+                    )
+
+                message = (
+                    commit_message
+                    or f"publish brief {date_str} ({len(the_plan.index_briefs)} total)"
+                )
+                self._git("commit", "-m", message)
+                sha = self._git("rev-parse", "HEAD").strip()
+
+                pushed = False
+                if push:
+                    try:
+                        self._git("push", "origin", the_plan.branch)
+                        pushed = True
+                    except PublishError as exc:
+                        # We still committed locally — but tell the user
+                        # the remote isn't updated. They can `git push`
+                        # themselves later without rerunning publish.
+                        logger.warning("git push failed (commit kept locally): %s", exc)
+                        raise
+
                 return PublishResult(
                     plan=the_plan,
                     dry_run=False,
-                    pushed=False,
-                    commit_sha=None,
+                    pushed=pushed,
+                    commit_sha=sha,
                     original_branch=original_branch,
-                    message=msg,
+                    message=f"published {date_str} as {sha[:8]} on {the_plan.branch}",
                 )
-
-            message = (
-                commit_message
-                or f"publish brief {date_str} ({len(the_plan.index_briefs)} total)"
-            )
-            self._git("commit", "-m", message)
-            sha = self._git("rev-parse", "HEAD").strip()
-
-            pushed = False
-            if push:
-                try:
-                    self._git("push", "origin", the_plan.branch)
-                    pushed = True
-                except PublishError as exc:
-                    # We still committed locally — but tell the user
-                    # the remote isn't updated. They can `git push`
-                    # themselves later without rerunning publish.
-                    logger.warning("git push failed (commit kept locally): %s", exc)
-                    raise
-
-            return PublishResult(
-                plan=the_plan,
-                dry_run=False,
-                pushed=pushed,
-                commit_sha=sha,
-                original_branch=original_branch,
-                message=f"published {date_str} as {sha[:8]} on {the_plan.branch}",
-            )
         finally:
             # Best-effort rollback. We swallow rollback failures
             # because the original error (if any) is more important.
@@ -584,6 +592,101 @@ class GhPagesPublisher:
     # Helpers — file IO
     # ------------------------------------------------------------------
 
+    def _copy_to_staging(self, source: Path | None, target_dir: Path) -> Path | None:
+        if source is None:
+            return None
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / source.name
+        shutil.copy2(source, target)
+        return target
+
+    def _stage_plan_sources(self, plan: PublishPlan, staging_root: Path) -> PublishPlan:
+        """Copy publish inputs outside the git worktree before branch swaps."""
+        staged_briefs_dir = staging_root / "briefs"
+        staged_charts_root = staging_root / "charts"
+        staged_feeds_dir = staging_root / "feeds"
+        staged_digests_dir = staging_root / "digests"
+
+        staged_brief = self._copy_to_staging(plan.brief_source, staged_briefs_dir)
+        if staged_brief is None:
+            raise PublishError(f"brief disappeared before staging: {plan.brief_source}")
+        staged_latest = self._copy_to_staging(plan.latest_source, staged_briefs_dir)
+
+        source_brief_siblings = {
+            plan.brief_source,
+            *(p for p in [plan.latest_source] if p is not None),
+        }
+        staged_files: list[Path] = [staged_brief]
+        if staged_latest is not None:
+            staged_files.append(staged_latest)
+        for sibling in plan.files_to_copy:
+            if sibling.parent != plan.brief_source.parent:
+                continue
+            if sibling in source_brief_siblings:
+                continue
+            staged_sibling = self._copy_to_staging(sibling, staged_briefs_dir)
+            if staged_sibling is not None:
+                staged_files.append(staged_sibling)
+
+        staged_chart_source: Path | None = None
+        if plan.chart_source is not None:
+            staged_chart_source = staged_charts_root / plan.chart_source.name
+            shutil.copytree(plan.chart_source, staged_chart_source)
+            staged_files.extend(sorted(staged_chart_source.glob("*.png")))
+
+        staged_feed = self._copy_to_staging(plan.feed_source, staged_feeds_dir)
+        staged_atom = self._copy_to_staging(plan.atom_source, staged_feeds_dir)
+        if staged_feed is not None:
+            staged_files.append(staged_feed)
+        if staged_atom is not None:
+            staged_files.append(staged_atom)
+
+        staged_digest_sources: list[Path] = []
+        for digest in plan.digest_sources:
+            staged_digest = self._copy_to_staging(digest, staged_digests_dir)
+            if staged_digest is not None:
+                staged_digest_sources.append(staged_digest)
+                staged_files.append(staged_digest)
+
+        staged_monthly_sources: list[Path] = []
+        for monthly in plan.monthly_sources:
+            staged_monthly = self._copy_to_staging(monthly, staged_digests_dir)
+            if staged_monthly is not None:
+                staged_monthly_sources.append(staged_monthly)
+                staged_files.append(staged_monthly)
+
+        return PublishPlan(
+            date=plan.date,
+            branch=plan.branch,
+            brief_source=staged_brief,
+            latest_source=staged_latest,
+            chart_source=staged_chart_source,
+            feed_source=staged_feed,
+            atom_source=staged_atom,
+            files_to_copy=staged_files,
+            index_briefs=plan.index_briefs,
+            index_digests=plan.index_digests,
+            index_monthlies=plan.index_monthlies,
+            digest_sources=staged_digest_sources,
+            monthly_sources=staged_monthly_sources,
+            will_create_orphan=plan.will_create_orphan,
+        )
+
+    def _stage_template_dir(self, target_dir: Path) -> Path:
+        if self.template_dir.exists():
+            shutil.copytree(self.template_dir, target_dir)
+        return target_dir
+
+    def _planned_language_variants(self, plan: PublishPlan) -> list[Path]:
+        return sorted(
+            p
+            for p in plan.files_to_copy
+            if p.parent == plan.brief_source.parent
+            and p != plan.brief_source
+            and p != plan.latest_source
+            and _supported_localized_stem(p.stem) == plan.date
+        )
+
     def _collect_all_brief_dates(self, *, extra: str | None = None) -> list[str]:
         """Return the dated brief stems on the gh-pages branch plus ``extra``.
 
@@ -626,7 +729,7 @@ class GhPagesPublisher:
         )
         if plan.latest_source is not None:
             shutil.copy2(plan.latest_source, briefs_target_dir / "latest.md")
-        for lang_md in self._collect_language_variants(plan.date):
+        for lang_md in self._planned_language_variants(plan):
             shutil.copy2(lang_md, briefs_target_dir / lang_md.name)
 
         # 2. Charts → ``charts/<date>/*.png``.
@@ -687,15 +790,16 @@ class GhPagesPublisher:
             if _looks_like_daily_stem(leaked_base):
                 md.unlink()
 
-    def _overlay_template(self) -> None:
+    def _overlay_template(self, template_dir: Path | None = None) -> None:
         """Copy ``gh-pages-template/*`` over the worktree (only if present)."""
-        if not self.template_dir.exists():
+        source_dir = template_dir or self.template_dir
+        if not source_dir.exists():
             logger.debug(
-                "no template dir at %s — skipping overlay", self.template_dir
+                "no template dir at %s — skipping overlay", source_dir
             )
             return
         for rel in _TEMPLATE_FILES:
-            src = self.template_dir / rel
+            src = source_dir / rel
             if not src.exists():
                 logger.debug("template file %s missing — skipping", rel)
                 continue

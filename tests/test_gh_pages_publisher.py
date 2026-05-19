@@ -238,6 +238,44 @@ def test_publish_creates_orphan_branch_and_commits(
     assert "feed.xml" in tree
 
 
+def test_publish_stages_repo_local_output_before_orphan_scrub(
+    tmp_repo: Path,
+    template_dir: Path,
+) -> None:
+    """Repo-local ignored output must survive the first orphan publish via staging."""
+    (tmp_repo / ".gitignore").write_text("output/\n", encoding="utf-8")
+    _git(tmp_repo, "add", ".gitignore")
+    _git(tmp_repo, "commit", "-m", "ignore generated output")
+
+    out = tmp_repo / "output"
+    briefs = out / "briefs"
+    charts = out / "charts" / "2026-05-17"
+    briefs.mkdir(parents=True)
+    charts.mkdir(parents=True)
+    (briefs / "2026-05-17.md").write_text("# Brief 2026-05-17\n", encoding="utf-8")
+    (briefs / "latest.md").write_text("# Latest\n", encoding="utf-8")
+    (charts / "policy_impact.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    feed = out / "feed.xml"
+    feed.write_text("<rss/>\n", encoding="utf-8")
+
+    pub = GhPagesPublisher(
+        brief_dir=briefs,
+        chart_dir=out / "charts",
+        feed_path=feed,
+        template_dir=template_dir,
+        repo_root=tmp_repo,
+    )
+
+    result = pub.publish("2026-05-17", push=False)
+    assert result.commit_sha is not None
+    assert _git(tmp_repo, "rev-parse", "--abbrev-ref", "HEAD").strip() == "main"
+    tree_entries = set(_git(tmp_repo, "ls-tree", "-r", "--name-only", "gh-pages").splitlines())
+    assert "briefs/2026-05-17.md" in tree_entries
+    assert "briefs/latest.md" in tree_entries
+    assert "charts/2026-05-17/policy_impact.png" in tree_entries
+    assert "feed.xml" in tree_entries
+
+
 def test_publish_copies_atom_feed_alongside_rss(
     tmp_repo: Path,
     brief_layout: dict[str, Path],
