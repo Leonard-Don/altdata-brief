@@ -86,6 +86,7 @@ from cn_altdata_brief.validate import (
     run_all_checks,
     summarize,
 )
+from cn_altdata_brief.validate_quality import run_strict_checks
 
 SOURCE_MODE_CHOICES = ("auto", "public", "cache", "live")
 # v0.8: bilingual support. ``CN`` is the deterministic ground truth and
@@ -248,6 +249,36 @@ def _build_parser() -> argparse.ArgumentParser:
             "Pass-through to the underlying adapter resolution; see "
             "`generate --source-mode --help`."
         ),
+    )
+    val.add_argument(
+        "--strict",
+        action="store_true",
+        help=(
+            "Also run the v0.12 content-quality checks: fingerprint freshness, "
+            "signal density, cross-source consistency, schema regression. "
+            "Equivalent to --check-fingerprint --check-density --check-consistency "
+            "--check-schema. Default validate keeps backward-compat with v0.2."
+        ),
+    )
+    val.add_argument(
+        "--check-fingerprint",
+        action="store_true",
+        help="Run only the content_fingerprint_freshness check (subset of --strict).",
+    )
+    val.add_argument(
+        "--check-density",
+        action="store_true",
+        help="Run only the signal_density check (subset of --strict).",
+    )
+    val.add_argument(
+        "--check-consistency",
+        action="store_true",
+        help="Run only the cross_source_consistency check (subset of --strict).",
+    )
+    val.add_argument(
+        "--check-schema",
+        action="store_true",
+        help="Run only the schema_regression check (subset of --strict).",
     )
     val.add_argument(
         "-v", "--verbose", action="store_true", help="Verbose logging (subcommand-scoped alias)."
@@ -763,6 +794,28 @@ def _log_translation_usage(
     )
 
 
+def _strict_includes_from_args(args: argparse.Namespace) -> tuple[str, ...] | None:
+    """Translate validate CLI flags into a tuple of strict-check identifiers.
+
+    Returns ``None`` when no quality checks were requested (default
+    validate run preserves v0.2 surface). Returns the full tuple when
+    ``--strict`` is set; otherwise returns the subset selected by the
+    per-check flags.
+    """
+    if getattr(args, "strict", False):
+        return ("fingerprint", "density", "consistency", "schema")
+    subset: list[str] = []
+    for flag, key in (
+        ("check_fingerprint", "fingerprint"),
+        ("check_density", "density"),
+        ("check_consistency", "consistency"),
+        ("check_schema", "schema"),
+    ):
+        if getattr(args, flag, False):
+            subset.append(key)
+    return tuple(subset) if subset else None
+
+
 def _cmd_validate(args: argparse.Namespace) -> int:
     source_mode = getattr(args, "source_mode", "auto")
     cfg = load_source_config(**source_mode_to_kwargs(source_mode))
@@ -782,6 +835,14 @@ def _cmd_validate(args: argparse.Namespace) -> int:
         payloads,
         allow_missing_cache_only_sources=(source_mode == "public"),
     )
+
+    # v0.12: opt-in content-quality checks. --strict turns them all on;
+    # individual --check-* flags select a subset. The default validate
+    # call (no flags) preserves v0.2 backward-compatible behavior.
+    strict_includes = _strict_includes_from_args(args)
+    if strict_includes is not None:
+        results.extend(run_strict_checks(payloads, include=strict_includes))
+
     code = summarize(results, fail_on_warn=args.fail_on_warn)
 
     if args.json:

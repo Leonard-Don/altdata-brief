@@ -2,6 +2,10 @@
 # v0.5 — manual run wrapper.
 # v0.6 — also chains `publish` after a successful generate, gated by
 #        RUN_PUBLISH_AFTER_GENERATE (default: 1).
+# v0.12 — optional content-quality pre-publish guard. When
+#         CN_ALTDATA_BRIEF_STRICT=1, runs `validate --strict` after
+#         generate; a FAIL aborts the publish step (the locally generated
+#         brief is still kept on disk for inspection).
 #
 # Runs the same command the launchd job runs, so you can validate the
 # setup without waiting for 17:00. Also doubles as the launchd
@@ -12,15 +16,19 @@
 #   - cd to project root
 #   - run `uv sync --quiet` (cheap idempotent step)
 #   - run `uv run cn-altdata-brief generate --source-mode auto`
-#   - if generate succeeded AND RUN_PUBLISH_AFTER_GENERATE != 0,
-#     chain `scripts/publish_now.sh` (which pushes the brief to
-#     gh-pages so the public URL stays fresh).
+#   - if CN_ALTDATA_BRIEF_STRICT=1, run `validate --strict` as a
+#     pre-publish guard. Exit code 2 (any FAIL) aborts the publish step.
+#   - if generate succeeded AND RUN_PUBLISH_AFTER_GENERATE != 0 AND the
+#     strict guard didn't block, chain `scripts/publish_now.sh` (which
+#     pushes the brief to gh-pages so the public URL stays fresh).
 #   - on non-zero exit at any stage, fire a macOS notification via osascript
 #   - either way, append a one-line timestamped record to launchd_runs.log
 #
-# Opt-outs:
+# Opt-outs / opt-ins:
 #   RUN_PUBLISH_AFTER_GENERATE=0 bash scripts/run_now.sh
 #       — skip the gh-pages publish step (useful when offline)
+#   CN_ALTDATA_BRIEF_STRICT=1 bash scripts/run_now.sh
+#       — enable the v0.12 content-quality strict guard
 set -uo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -67,11 +75,39 @@ else
     exit "${rc}"
 fi
 
+# v0.12 — pre-publish content-quality guard.
+# When CN_ALTDATA_BRIEF_STRICT=1, run the v0.12 quality checks. A FAIL
+# (exit code 2) aborts the publish step so we don't ship a brief whose
+# inputs failed structural / content sanity. The locally generated brief
+# is kept on disk so the operator can inspect and decide.
+strict_block_publish=0
+if [[ "${CN_ALTDATA_BRIEF_STRICT:-0}" == "1" ]]; then
+    set +e
+    uv run cn-altdata-brief validate --strict >>"${LOG_PATH}" 2>&1
+    strict_rc=$?
+    set -e
+    if [[ "${strict_rc}" -eq 2 ]]; then
+        msg="validate --strict FAILED (exit=${strict_rc}); aborting publish, brief kept on disk"
+        echo "[$(stamp)] ERROR ${msg}" | tee -a "${LOG_PATH}"
+        if [[ "$(uname -s)" == "Darwin" ]]; then
+            osascript -e "display notification \"${msg}\" with title \"cn-altdata-brief\"" || true
+        fi
+        strict_block_publish=1
+    elif [[ "${strict_rc}" -ne 0 ]]; then
+        echo "[$(stamp)] WARN validate --strict surfaced WARN (exit=${strict_rc}); publishing anyway" \
+            | tee -a "${LOG_PATH}"
+    else
+        echo "[$(stamp)] strict guard OK (exit=0)" | tee -a "${LOG_PATH}"
+    fi
+fi
+
 # v0.6 — chain the gh-pages publish step.
 # Default ON so the daily launchd run actually keeps the public URL
 # fresh. Set RUN_PUBLISH_AFTER_GENERATE=0 to opt out (e.g. when the
-# laptop is offline).
-if [[ "${RUN_PUBLISH_AFTER_GENERATE:-1}" != "0" ]]; then
+# laptop is offline). v0.12 strict-FAIL also short-circuits the publish.
+if [[ "${strict_block_publish}" == "1" ]]; then
+    echo "[$(stamp)] publish step skipped (strict guard blocked)" | tee -a "${LOG_PATH}"
+elif [[ "${RUN_PUBLISH_AFTER_GENERATE:-1}" != "0" ]]; then
     set +e
     bash "${PROJECT_ROOT}/scripts/publish_now.sh"
     pub_rc=$?

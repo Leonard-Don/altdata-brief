@@ -1,0 +1,16 @@
+{
+  "_comment": "Schema baseline for super_pricing public summary (alt_data_summary.json). Captures the keys we depend on for the daily brief. Required keys MUST be present at fetch time; optional keys are tolerated when missing. Generated against the real public summary at commit time; bump baseline_version when intentionally extending.",
+  "baseline_version": 1,
+  "source": "super_pricing",
+  "expected_payload_keys": {
+    "policy_radar": {
+      "required": ["industry_signals", "policy_count"],
+      "optional": ["timestamp", "signal_score", "confidence", "source_health"]
+    },
+    "macro_hf": {
+      "required": ["metals"],
+      "optional": ["ports", "timestamp"]
+    }
+  },
+  "_note": "Validated against AdapterPayload.data shape, NOT raw JSON keys. The adapter's _normalize_* functions translate upstream changes — schema_regression_check is for the *internal* shape consumed by synthesis."
+}
