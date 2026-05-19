@@ -53,8 +53,17 @@ def _format_metal(m: dict[str, Any]) -> str:
     vol = float(m.get("volatility", 0.0) or 0.0)
     conf = float(m.get("confidence", 0.0) or 0.0)
     direction_tag = _tag_for(change, trend)
+    # When the public-summary upstream has no weekly-change data,
+    # _normalize_macro_from_public hardcodes both change and volatility
+    # to 0.0. Treat that as "no data" (same pattern as M2 industry fix
+    # in commit 1e92acd) instead of rendering '周价格变化 +0.00% · 波动率 0.0'
+    # which reads like real but zero data.
+    if change == 0.0 and vol == 0.0:
+        prefix = "无周变动"
+    else:
+        prefix = f"周价格变化 {change:+.2f}% · 波动率 {vol:.1f}"
     return (
-        f"**{name}**：周价格变化 {change:+.2f}% · 波动率 {vol:.1f} · "
+        f"**{name}**：{prefix} · "
         f"趋势={trend} · 标签={direction_tag} · 置信度={conf:.2f}"
     )
 
