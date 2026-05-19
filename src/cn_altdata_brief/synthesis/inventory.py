@@ -23,8 +23,8 @@ def synthesize_inventory(payload: AdapterPayload | None) -> dict[str, Any]:
     bullets = [_format_metal(m) for m in metals]
     ports = macro.get("ports") or {}
     port_line = (
-        f"全球港口拥堵指数 {ports.get('global_index')} ({ports.get('status', '未知')})·"
-        f"tracked={ports.get('tracked_ports')}"
+        f"全球港口拥堵指数 {ports.get('global_index')}（{ports.get('status', '未知')}）· "
+        f"跟踪港口数={ports.get('tracked_ports')}"
         if ports
         else None
     )
@@ -49,25 +49,35 @@ def synthesize_inventory(payload: AdapterPayload | None) -> dict[str, Any]:
 def _format_metal(m: dict[str, Any]) -> str:
     name = m.get("name_cn") or m.get("metal", "未知")
     change = float(m.get("price_change_pct", 0.0) or 0.0)
-    trend = m.get("trend", "stable")
+    trend = _trend_label(str(m.get("trend", "stable")))
     vol = float(m.get("volatility", 0.0) or 0.0)
     conf = float(m.get("confidence", 0.0) or 0.0)
     direction_tag = _tag_for(change, trend)
     return (
         f"**{name}**：周价格变化 {change:+.2f}% · 波动率 {vol:.1f} · "
-        f"趋势={trend} · 标签={direction_tag} · conf={conf:.2f}"
+        f"趋势={trend} · 标签={direction_tag} · 置信度={conf:.2f}"
     )
 
 
 def _tag_for(change: float, trend: str) -> str:
     """Boring rule: |change| ≤ 0.5% → 持稳；change < 0 → 去库; change > 0 → 累库."""
-    if trend in {"falling", "down"}:
+    if trend in {"下行", "下降"}:
         return "去库"
-    if trend in {"rising", "up"}:
+    if trend in {"上行", "上升"}:
         return "累库"
     if abs(change) <= 0.5:
         return "持稳"
     return "去库" if change < 0 else "累库"
+
+
+def _trend_label(trend: str) -> str:
+    return {
+        "falling": "下行",
+        "down": "下行",
+        "rising": "上行",
+        "up": "上行",
+        "stable": "稳定",
+    }.get(trend, trend or "未知")
 
 
 def _empty(reason: str, *, sources: list[str] | None = None) -> dict[str, Any]:

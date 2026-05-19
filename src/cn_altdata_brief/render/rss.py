@@ -30,9 +30,9 @@ from pathlib import Path
 from uuid import uuid4
 from xml.etree import ElementTree as ET
 
-CHANNEL_TITLE = "CN AltData Brief"
+CHANNEL_TITLE = "中国另类数据日报"
 CHANNEL_DESCRIPTION = (
-    "Daily research brief synthesizing alt-data signals from 4 public source adapters."
+    "基于 4 个公开摘要/快照数据源合成的中国权益市场另类数据研究简报。"
 )
 DEFAULT_SITE_URL = "https://leonard-don.github.io/cn-altdata-brief"
 # Channel-level language stays zh-CN because Chinese is the ground
@@ -52,7 +52,7 @@ _TOP_HEADLINE_RE = re.compile(
 # matters: CN first so it occupies the more prominent slot per date.
 _LANGUAGE_VARIANTS: tuple[tuple[str, str, str, str], ...] = (
     ("", "zh-CN", "", ""),
-    (".en", "en", "[EN] ", "English translation — see Chinese version for ground truth."),
+    (".en", "en", "[EN] ", "英文翻译暂不可用，请以中文版本为准。"),
 )
 
 
@@ -328,7 +328,7 @@ def _collect_digest_items(
             headline = _extract_top_headline(text)
             description = _extract_first_paragraph(text) or desc_fallback
             base_title = f"本周回顾 {stem}" if not title_prefix else f"Weekly Digest {stem}"
-            title = f"[Weekly] {base_title}"
+            title = f"[周报] {base_title}" if not title_prefix else f"[Weekly] {base_title}"
             if headline:
                 title = f"{title} · {headline}"
             if title_prefix:
@@ -399,7 +399,7 @@ def _collect_monthly_items(
             base_title = (
                 f"上月回顾 {stem}" if not title_prefix else f"Monthly Digest {stem}"
             )
-            title = f"[Monthly] {base_title}"
+            title = f"[月报] {base_title}" if not title_prefix else f"[Monthly] {base_title}"
             if headline:
                 title = f"{title} · {headline}"
             if title_prefix:
@@ -471,7 +471,7 @@ def _extract_first_paragraph(brief_md: str) -> str:
     blockquote (the auto-generated subtitle), and section headings so
     the description starts with substantive text.
     """
-    skip_prefixes = ("#", ">", "---", "![", "**Sources:**", "{%", "<!--")
+    skip_prefixes = ("#", ">", "---", "![", "**Sources:**", "**来源：**", "{%", "<!--")
     lines = brief_md.splitlines()
     start = 0
     if lines and lines[0].strip() == "---":

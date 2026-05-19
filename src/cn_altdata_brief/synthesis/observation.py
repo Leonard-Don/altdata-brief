@@ -43,6 +43,11 @@ class _Candidate:
 
 _BOLDED_RE = re.compile(r"\*\*([^*]+)\*\*")
 _NON_INDUSTRY_BOLD_TOKENS = {"良好", "一般", "较弱", "未知", "OK", "WARN", "FAIL"}
+_SIGNAL_LABELS = {
+    "bullish": "利好",
+    "bearish": "利空",
+    "neutral": "中性",
+}
 
 
 def _industries_from_candidate(cand: _Candidate) -> list[str]:
@@ -158,12 +163,12 @@ def _policy_candidate(payload: AdapterPayload) -> _Candidate | None:
 
     framing = (
         f"今日核心信号是 **{industry}** 的政策口径{direction}收敛"
-        f"（avg_impact={impact:+.3f}，mentions={mentions}）。"
+        f"（政策影响={impact:+.3f}，提及次数={mentions}）。"
     )
     intensity = describe_intensity(abs(impact), BASELINE_POLICY_IMPACT_7D)
     context = (
-        f"对比近 7 日基线 |avg_impact|≈{BASELINE_POLICY_IMPACT_7D:.2f}，"
-        f"该信号强度{intensity}，policy_radar 当批次累计 {policy.get('policy_count', 0)} 条记录。"
+        f"对比近 7 日政策影响基线≈{BASELINE_POLICY_IMPACT_7D:.2f}，"
+        f"该信号强度{intensity}，政策雷达当批次累计 {policy.get('policy_count', 0)} 条记录。"
     )
     action = (
         f"若该信号延续 {SIGNAL_PERSISTENCE_DAYS} 日，可重点观察 **{industry}** 板块"
@@ -235,7 +240,7 @@ def _etf_candidate(payload: AdapterPayload) -> _Candidate | None:
         f"对比近 7 日波动均值 ≈{BASELINE_ETF_NAV_VOL_7D * 100:.2f}%，"
         f"今日波幅{intensity}；商品驱动子源 "
         f"{(payload.data.get('commodity_drivers') or {}).get('ok_count', 0)}"
-        f"/{(payload.data.get('commodity_drivers') or {}).get('total', 0)} OK。"
+        f"/{(payload.data.get('commodity_drivers') or {}).get('total', 0)} 正常。"
     )
     action = (
         f"若该信号延续 {SIGNAL_PERSISTENCE_DAYS} 日，可重点观察 **有色金属** 现货成交，"
@@ -260,8 +265,8 @@ def _industry_candidate(payload: AdapterPayload) -> _Candidate | None:
         return None
 
     framing = (
-        f"今日核心信号是行业热度榜首 **{top['industry']}** "
-        f"(heat={heat:.3f}, policy={top.get('policy_signal')})。"
+        f"今日核心信号是行业热度榜首 **{top['industry']}**"
+        f"（热度={heat:.3f}，政策口径={_SIGNAL_LABELS.get(str(top.get('policy_signal')), '中性')}）。"
     )
     intensity = describe_intensity(heat, BASELINE_INDUSTRY_HEAT_7D)
     context = (
@@ -285,7 +290,7 @@ def _index_candidate(payload: AdapterPayload) -> _Candidate | None:
     pap = payload.data.get("pap_changes", []) or []
     if pap:
         framing = (
-            f"今日核心信号是 index-inclusion-research PAP 比对发现 {len(pap)} 条假说裁决迁移。"
+            f"今日核心信号是指数纳入研究的 PAP 比对发现 {len(pap)} 条假说裁决迁移。"
         )
         context = (
             "对比近 7 日通常 0–1 条迁移，今日研究框架出现新一致性事件，"
@@ -293,7 +298,7 @@ def _index_candidate(payload: AdapterPayload) -> _Candidate | None:
         )
         action = (
             f"若该信号延续 {SIGNAL_PERSISTENCE_DAYS} 日，可重点观察是否需要"
-            "上调或下调相应假说的 evidence_tier。"
+            "上调或下调相应假说的证据层级。"
         )
         return _Candidate(
             strength=0.5 + len(pap) * 0.1,  # PAP migrations are rare → mid-high prior
@@ -307,7 +312,7 @@ def _index_candidate(payload: AdapterPayload) -> _Candidate | None:
         return None
     supported = sum(1 for v in verdicts if v.get("verdict") == "支持")
     framing = (
-        f"今日核心信号是 index-inclusion-research {len(verdicts)} 条 CMA 裁决保持稳定，"
+        f"今日核心信号是指数纳入研究中 {len(verdicts)} 条 CMA 裁决保持稳定，"
         f"{supported}/{len(verdicts)} 为「支持」。"
     )
     context = (
@@ -315,7 +320,7 @@ def _index_candidate(payload: AdapterPayload) -> _Candidate | None:
     )
     action = (
         f"若该信号延续 {SIGNAL_PERSISTENCE_DAYS} 日，可重点观察现有「支持」假说"
-        "的 evidence_refs 是否进入复测窗口。"
+        "的证据引用是否进入复测窗口。"
     )
     return _Candidate(
         strength=0.05,  # baseline; gets out-prioritized when any policy/etf signal fires

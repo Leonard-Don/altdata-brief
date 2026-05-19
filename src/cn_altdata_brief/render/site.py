@@ -6,10 +6,10 @@ import re
 from datetime import date
 from pathlib import Path
 
-INDEX_HEADER = """# CN AltData Brief — 历史归档
+INDEX_HEADER = """# 中国另类数据日报 — 历史归档
 
 每个交易日 09:00 (UTC+8) 自动生成的研究简报。免费、可订阅、可引用。
-v0.9 起每周五 18:00 还会发布一份本周回顾（weekly digest），聚合本周 5 份日报。
+v0.9 起每周五 18:00 还会发布一份本周回顾，聚合本周 5 份日报。
 
 > 本项目通过 4 个公开摘要/快照数据源合成日报，详见 [README](../README.md)。
 
@@ -18,7 +18,7 @@ v0.9 起每周五 18:00 还会发布一份本周回顾（weekly digest），聚�
 """
 
 DIGEST_SECTION_HEADER = """
-## 本周回顾 / Weekly digests
+## 本周回顾
 
 """
 

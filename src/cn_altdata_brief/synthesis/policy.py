@@ -66,8 +66,8 @@ def _format_bullet(row: dict[str, Any]) -> str:
     signal = SIGNAL_LABELS.get(str(row.get("signal", "neutral")), "中性")
     direction = "" if impact == 0 else ("正向" if impact > 0 else "负向")
     return (
-        f"**{industry}**：avg_impact={impact:+.3f} ({direction or '中性'}) · "
-        f"mentions={mentions} · 信号={signal}"
+        f"**{industry}**：政策影响={impact:+.3f}（{direction or '中性'}）· "
+        f"提及次数={mentions} · 信号={signal}"
     )
 
 

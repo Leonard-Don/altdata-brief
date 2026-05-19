@@ -110,7 +110,7 @@ def test_generate_og_tags_emits_required_fields(tmp_path: Path) -> None:
     assert "新能源汽车" in tags["og:title"]
     assert tags["og:type"] == "article"
     assert tags["og:locale"] == "zh_CN"
-    assert tags["og:site_name"] == "CN AltData Brief"
+    assert tags["og:site_name"] == "中国另类数据日报"
     assert tags["twitter:card"] == "summary_large_image"
     assert tags["og:url"].endswith("/briefs/2026-05-17.html")
     assert tags["og:image"].startswith("https://example.com/cn-altdata-brief/charts/")
@@ -395,7 +395,7 @@ def test_atom_feed_schema(tmp_path: Path) -> None:
     assert root.tag == f"{ns}feed"
     assert root.find(f"{ns}id") is not None
     assert root.find(f"{ns}updated") is not None
-    assert root.find(f"{ns}title").text == "CN AltData Brief"
+    assert root.find(f"{ns}title").text == "中国另类数据日报"
     entries = root.findall(f"{ns}entry")
     assert len(entries) == 2
     for e in entries:

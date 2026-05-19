@@ -13,7 +13,7 @@ inflections_count: {{ inflections|length }}
 # 本周回顾 W{{ '%02d'|format(week_number) }} — {{ week_start }} → {{ week_end }}
 
 > 由 `cn-altdata-brief` 在 {{ fetched_at }} 自动生成，聚合本周 {{ brief_count }}/5 份每日简报。
-> 本文件为周度回顾（deterministic synthesis），不包含 LLM 改写。
+> 本文件为周度回顾（确定性规则合成），不包含大模型改写。
 
 ---
 
@@ -61,11 +61,11 @@ inflections_count: {{ inflections|length }}
 
 ## 3. 行业累计影响
 
-> 全部出现过的行业按 |累计 avg_impact| 排序（top 8）。
+> 全部出现过的行业按 |累计政策影响| 排序（前 8）。
 
 {% if cumulative_policy_impact %}
 {% for row in cumulative_policy_impact[:8] %}
-- **{{ row.industry }}**：累计 avg_impact = `{{ '%+0.3f'|format(row.cumulative) }}`
+- **{{ row.industry }}**：累计政策影响 = `{{ '%+0.3f'|format(row.cumulative) }}`
 {% endfor %}
 {% else %}
 - _本周无政策信号样本。_
@@ -116,7 +116,7 @@ inflections_count: {{ inflections|length }}
 
 - 周次：ISO `{{ iso_year }}-W{{ '%02d'|format(week_number) }}`
 - 区间：`{{ week_start }} → {{ week_end }}`
-- 聚合方式：deterministic rule-based digest（v0.9 暂不接入 LLM 合成；可选 `--with-llm` 生成英文 sibling）
+- 聚合方式：确定性规则合成（v0.9 暂不接入大模型合成；可选 `--with-llm` 生成英文版本）
 - 上游：output/briefs 内已存在的 CN 每日简报
 
-> Disclaimer：本周回顾不构成投资建议。所有信号来自公开数据源 + 自建 alt-data pipeline，仅供研究与教学讨论。
+> 声明：本周回顾不构成投资建议。所有信号来自公开数据源与自建另类数据流程，仅供研究与教学讨论。

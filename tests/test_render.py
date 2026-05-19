@@ -62,18 +62,17 @@ def test_render_full_brief_contains_all_five_sections(
         super_pricing_cache, quant_trading_cache, index_research_tables, etf_512400_snapshot
     )
     md = render_brief_markdown(context=ctx)
-    assert "# CN AltData Brief — 2026-05-17" in md
+    assert "# 中国另类数据日报 — 2026-05-17" in md
     assert "## 1. 政策动向" in md
     assert "## 2. 库存信号" in md
     assert "## 3. ETF 资金流" in md
     assert "## 4. 行业温度" in md
     assert "## 5. 本日观察" in md
-    assert "**Sources:**" in md
-    # Disclaimer present
-    assert "Disclaimer" in md
+    assert "**来源：**" in md
+    assert "声明" in md
     assert "llm_requested: false" in md
     assert "llm_rephrase_used: false" in md
-    assert "默认不调用 LLM" in md
+    assert "默认不调用大模型" in md
     assert "4 个公开摘要/快照数据源" in md
     assert "6 个项目组合" not in md
     assert "4 个本地量化项目" not in md
@@ -107,7 +106,7 @@ def test_render_brief_with_llm_polished_observation_keeps_raw_audit(
     assert "llm_requested: true" in md
     assert "llm_rephrase_used: true" in md
     assert "fake-model" in md
-    assert "原始规则化版本（deterministic source text）" in md
+    assert "原始规则化版本" in md
     assert raw.splitlines()[0] in md
 
 

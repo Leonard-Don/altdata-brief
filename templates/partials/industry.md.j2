@@ -1,13 +1,13 @@
 ## 4. {{ industry.title }}
 
 {% if charts.get('industry') %}
-![行业温度 chart]({{ charts['industry'] }})
+![行业温度图表]({{ charts['industry'] }})
 {% endif %}
 
 {% for bullet in industry.bullets %}
 - {{ bullet }}
 {% endfor %}
 
-**Sources:** {{ industry.sources|join(' · ') if industry.sources else 'n/a' }}
+**来源：** {{ industry.sources|join(' · ') if industry.sources else '暂无' }}
 
 ---

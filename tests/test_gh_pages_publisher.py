@@ -23,6 +23,8 @@ from cn_altdata_brief.publish.gh_pages import (
     _render_index_md,
 )
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -65,8 +67,8 @@ def brief_layout(tmp_path: Path) -> dict[str, Path]:
     (briefs / "2026-05-17.md").write_text(
         "# Brief 2026-05-17\n\nbody\n", encoding="utf-8"
     )
-    # The publisher should silently ignore index.md / latest.md as
-    # dated briefs (they aren't dates).
+    # The publisher should silently ignore index.md as a dated brief and
+    # publish latest.md as a stable alias (it is not an archive row).
     (briefs / "index.md").write_text("# index placeholder\n", encoding="utf-8")
     (briefs / "latest.md").write_text("# latest placeholder\n", encoding="utf-8")
     (charts / "policy_impact.png").write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -150,9 +152,15 @@ def test_dry_run_lists_files_and_skips_git(
         repo_root=tmp_repo,
     )
     result = pub.publish("2026-05-17", push=False, dry_run=True)
-    # Brief + 2 charts + feed.xml = 4 files.
+    # Brief + latest alias + 2 charts + feed.xml = 5 files.
     paths = {p.name for p in result.plan.files_to_copy}
-    assert paths == {"2026-05-17.md", "policy_impact.png", "etf_nav.png", "feed.xml"}
+    assert paths == {
+        "2026-05-17.md",
+        "latest.md",
+        "policy_impact.png",
+        "etf_nav.png",
+        "feed.xml",
+    }
     assert result.dry_run is True
     assert result.commit_sha is None
     assert result.pushed is False
@@ -225,6 +233,7 @@ def test_publish_creates_orphan_branch_and_commits(
     assert "_config.yml" in tree
     assert "_layouts/brief.html" in tree
     assert "briefs/2026-05-17.md" in tree
+    assert "briefs/latest.md" in tree
     assert "charts/2026-05-17/policy_impact.png" in tree
     assert "feed.xml" in tree
 
@@ -254,6 +263,7 @@ def test_publish_copies_atom_feed_alongside_rss(
     assert dry_run.plan.atom_source == atom
     assert {p.name for p in dry_run.plan.files_to_copy} == {
         "2026-05-17.md",
+        "latest.md",
         "policy_impact.png",
         "etf_nav.png",
         "feed.xml",
@@ -265,6 +275,7 @@ def test_publish_copies_atom_feed_alongside_rss(
     tree_entries = set(_git(tmp_repo, "ls-tree", "-r", "--name-only", "gh-pages").splitlines())
     assert "feed.xml" in tree_entries
     assert "feed.atom" in tree_entries
+    assert "briefs/latest.md" in tree_entries
     assert _git(tmp_repo, "show", "gh-pages:feed.xml") == rss_xml
     assert _git(tmp_repo, "show", "gh-pages:feed.atom") == atom_xml
 
@@ -275,6 +286,10 @@ def test_index_md_renders_5_row_table() -> None:
     )
     # YAML front matter
     assert body.startswith("---\nlayout: default")
+    assert "实时刷新" in body
+    assert "data-refresh-fingerprint" in body
+    assert "_refresh_probe" in body
+    assert "nextSignature && currentSignature" in body
     # All 5 dates appear as table rows
     rows = [
         line
@@ -292,7 +307,26 @@ def test_index_md_renders_5_row_table() -> None:
 
 def test_index_md_empty_archive_has_placeholder() -> None:
     body = _render_index_md([])
-    assert "(暂无 / none yet)" in body
+    assert "_暂无" in body
+    assert "自动刷新检查中" in body
+
+
+def test_real_template_enables_realtime_refresh_for_pages() -> None:
+    layout = (PROJECT_ROOT / "gh-pages-template" / "_layouts" / "brief.html").read_text(
+        encoding="utf-8"
+    )
+    config = (PROJECT_ROOT / "gh-pages-template" / "_config.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "cn-altdata-generated-at" in layout
+    assert "currentPageSignature" in layout
+    assert "data-refresh-status" in layout
+    assert "_refresh_probe" in layout
+    assert "nextSignature && currentSignature" in layout
+    assert "hash.toString" not in layout
+    assert "path: digests" in config
+    assert "layout: brief" in config
 
 
 def test_rollback_returns_to_original_branch_on_failure(
@@ -560,7 +594,7 @@ def test_v09_digests_published_alongside_briefs(
         text=True,
         check=True,
     ).stdout
-    assert "本周回顾 / Weekly digests" in index
+    assert "## 本周回顾" in index
     assert "2026-W20" in index
 
 

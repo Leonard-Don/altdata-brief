@@ -28,6 +28,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from cn_altdata_brief import __version__
 from cn_altdata_brief.adapters import build_default_adapters
@@ -100,6 +101,7 @@ _LANG_FILE_SUFFIX = {
 }
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]  # src/cn_altdata_brief/cli.py -> project root
+DEFAULT_CADENCE_TZ = ZoneInfo("Asia/Shanghai")
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "output"
 DEFAULT_BRIEFS_DIR = DEFAULT_OUTPUT_DIR / "briefs"
 DEFAULT_CHARTS_DIR = DEFAULT_OUTPUT_DIR / "charts"
@@ -533,7 +535,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _parse_generate_date(raw_date: str | None) -> str:
     if raw_date is None:
-        return datetime.now(UTC).strftime("%Y-%m-%d")
+        return _today_cadence_date()
 
     try:
         parsed = datetime.strptime(raw_date, "%Y-%m-%d").date()
@@ -543,6 +545,11 @@ def _parse_generate_date(raw_date: str | None) -> str:
     if parsed.isoformat() != raw_date:
         raise ValueError(f"invalid --date {raw_date!r}; expected YYYY-MM-DD")
     return raw_date
+
+
+def _today_cadence_date() -> str:
+    """Return the publishing cadence date in Beijing time."""
+    return datetime.now(DEFAULT_CADENCE_TZ).strftime("%Y-%m-%d")
 
 
 def _cmd_generate(args: argparse.Namespace) -> int:
@@ -1169,7 +1176,7 @@ def _relative_to(briefs_dir: Path, chart_path: Path) -> str:
 
 def _cmd_publish(args: argparse.Namespace) -> int:
     """v0.6 — push the brief for ``args.date`` to the gh-pages branch."""
-    date = args.date or datetime.now(UTC).strftime("%Y-%m-%d")
+    date = args.date or _today_cadence_date()
 
     publisher = GhPagesPublisher(
         brief_dir=Path(args.briefs_dir),
@@ -1223,7 +1230,7 @@ def _cmd_weekly_digest(args: argparse.Namespace) -> int:
     digests_dir = Path(args.digests_dir)
     digests_dir.mkdir(parents=True, exist_ok=True)
 
-    anchor_str = args.week_of or datetime.now(UTC).strftime("%Y-%m-%d")
+    anchor_str = args.week_of or _today_cadence_date()
     try:
         anchor = datetime.strptime(anchor_str, "%Y-%m-%d").date()
     except ValueError:
@@ -1375,7 +1382,7 @@ def _resolve_month_anchor(args: argparse.Namespace):
 
     raw = getattr(args, "month_of", None)
     if raw is None:
-        today = datetime.now(UTC).date()
+        today = datetime.now(DEFAULT_CADENCE_TZ).date()
         return previous_month(today)
     raw = str(raw).strip()
     if len(raw) == 7 and raw[4] == "-":

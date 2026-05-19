@@ -269,6 +269,8 @@ RUN_PUBLISH_AFTER_GENERATE=0 bash scripts/run_now.sh
 
 `gh-pages` 分支是 orphan 历史，与 `main` 完全独立——主仓库的提交历史不会被 publish 污染。`gh-pages-template/` 下的 Jekyll 模板每次 publish 会覆盖到分支上，所以站点样式只需在 `main` 上改一次。
 
+发布页内置轻量实时刷新：浏览器每 60 秒无缓存探测当前页面，只有检测到新发布内容时才自动 reload。`briefs/latest.md` 也会随 publish 推到 `gh-pages`，适合固定打开“最新简报”入口等待本地/Actions 更新。
+
 ### v0.9 — 本周回顾 / Weekly digest (Friday cadence)
 
 每个周五 18:00（北京时间，工作日收盘后 1 小时）自动聚合本周 5 份日报，输出一份 `本周回顾 / Weekly digest`，与日报放在同一 gh-pages 站点上：
