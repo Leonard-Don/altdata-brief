@@ -27,6 +27,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -46,11 +47,15 @@ from cn_altdata_brief.validate import (
 SIGNAL_DENSITY_MIN_RATIO = 0.30  # 30 % of rows must carry signal
 POLICY_IMPACT_FLOOR = 0.1  # |avg_impact| threshold for "carries signal"
 FINGERPRINT_STALE_DAYS = 2  # how many consecutive identical days before WARN
+TEMPORAL_FLIP_RATE_MAX = 0.30  # day-over-day sign-flip ratio that triggers WARN
+TEMPORAL_HISTORY_DAYS = 7  # rolling window for temporal_coherence_check
+TEMPORAL_MIN_OBSERVATIONS = 3  # need ≥3 days before flip rate is meaningful
 
 # Project root resolution (this file lives at src/cn_altdata_brief/).
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_FINGERPRINT_HISTORY = _PROJECT_ROOT / "output" / "fingerprint_history.json"
 DEFAULT_SCHEMA_DIR = _PROJECT_ROOT / "tests" / "fixtures" / "schemas"
+DEFAULT_SIGNAL_HISTORY = _PROJECT_ROOT / "output" / "signal_history.json"
 
 # Each schema baseline file lives at <schema_dir>/<source>.schema.json.
 _SCHEMA_FILENAMES: dict[str, str] = {
@@ -795,6 +800,520 @@ def check_schema_regression(
 
 
 # ---------------------------------------------------------------------------
+# Placeholder detector check (ERROR-level)
+# ---------------------------------------------------------------------------
+#
+# The cross_source_consistency check caught a "测试行业" placeholder by
+# accident once — the placeholder failed the *consistency* check because it
+# didn't match the other source's industry list. A more direct guard is to
+# scan published payload strings for known placeholder shapes and FAIL the
+# pipeline before such content can ship. Severity is intentionally FAIL
+# (ERROR) so a CI run with --strict --fail-on-warn blocks the publish step
+# rather than emitting a soft warning.
+#
+# Pattern selection rationale:
+#   * "测试" — exact 2-character token; "试" alone is a real CJK character
+#     and appears in legitimate industry names ("试用期股", "试验机"). We
+#     scan for "测试" verbatim so single-char "试" is unaffected.
+#   * "示例" — same logic; "例" appears in real words. Two-char token only.
+#   * English placeholders ("TODO", "FIXME", "PLACEHOLDER", "LOREM IPSUM")
+#     — case-insensitive whole-word match so identifiers like "todomvc"
+#     don't fire. We use a word-boundary regex.
+#   * "占位" — Chinese for "placeholder". Two-char token, no word boundary.
+#   * "test_" / "TEST_" prefix on slug-like strings.
+#   * XXX / NNN sequences (3+ consecutive X or N caps) — placeholder
+#     scaffolds emitted by templating tools.
+
+# Patterns sorted in declaration order so reports are deterministic.
+_PLACEHOLDER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("cjk_test", re.compile(r"测试")),
+    ("cjk_example", re.compile(r"示例")),
+    ("cjk_placeholder", re.compile(r"占位")),
+    ("en_todo", re.compile(r"\bTODO\b", re.IGNORECASE)),
+    ("en_fixme", re.compile(r"\bFIXME\b", re.IGNORECASE)),
+    ("en_placeholder", re.compile(r"\bplaceholder\b", re.IGNORECASE)),
+    ("en_lorem_ipsum", re.compile(r"lorem\s+ipsum", re.IGNORECASE)),
+    ("slug_test_prefix", re.compile(r"\btest_[A-Za-z0-9]")),
+    ("scaffold_xxx", re.compile(r"X{3,}")),
+    ("scaffold_nnn", re.compile(r"N{3,}")),
+)
+
+#: Path-segment substrings whose values are auxiliary metadata where placeholder
+#: hits are expected (test profile names, schema versions, etc.). Without this
+#: allow-list a legit ``active_profiles: ["e2e-smoke"]`` or ``"test_env"`` key
+#: would FAIL the check. Match is substring-on-the-dotted-path so we can scope
+#: by both key name and JSON path.
+_PLACEHOLDER_PATH_ALLOWLIST: tuple[str, ...] = (
+    # Quant ships a "paper_trading.active_profiles" list whose entries are
+    # internal smoke-test profile names — they are intentionally test slugs.
+    "paper_trading.active_profiles",
+    # Schema-version and version strings are metadata, not user-facing content.
+    "schema_version",
+    "source_codebase_version",
+    "baseline_version",
+)
+
+
+def _path_is_allowlisted(path: str) -> bool:
+    """True iff ``path`` ends in or contains an allowlisted suffix.
+
+    Paths look like ``providers.paper_trading.active_profiles[0]`` — we use
+    substring containment so a wildcard list-index ``[0]`` doesn't escape
+    the allowlist.
+    """
+    for needle in _PLACEHOLDER_PATH_ALLOWLIST:
+        if needle in path:
+            return True
+    return False
+
+
+def _iter_string_values(
+    node: Any, path: str = ""
+) -> Iterable[tuple[str, str]]:
+    """Yield ``(json_path, string_value)`` for every string leaf in ``node``.
+
+    The walk is depth-first; list indices appear as ``[i]`` so the surfaced
+    path round-trips to a human reader. Non-string scalars are skipped —
+    placeholders surface as text content, not as bools/ints.
+    """
+    if isinstance(node, str):
+        yield (path, node)
+        return
+    if isinstance(node, dict):
+        for key, value in node.items():
+            child = f"{path}.{key}" if path else str(key)
+            yield from _iter_string_values(value, child)
+        return
+    if isinstance(node, list):
+        for idx, value in enumerate(node):
+            yield from _iter_string_values(value, f"{path}[{idx}]")
+        return
+    # bool/int/float/None: nothing to scan.
+
+
+def scan_payload_for_placeholders(
+    payload: AdapterPayload | None,
+) -> list[dict[str, str]]:
+    """Return a list of placeholder hits for one payload.
+
+    Each hit is ``{"path", "pattern", "value", "match"}``. The walk reports
+    EVERY hit (not just the first) so the operator sees the full picture
+    when more than one slipped through. Allowlisted paths are silently
+    skipped — see :data:`_PLACEHOLDER_PATH_ALLOWLIST`.
+    """
+    if payload is None:
+        return []
+    hits: list[dict[str, str]] = []
+    for path, value in _iter_string_values(payload.data):
+        if _path_is_allowlisted(path):
+            continue
+        for pattern_name, regex in _PLACEHOLDER_PATTERNS:
+            match = regex.search(value)
+            if match is None:
+                continue
+            hits.append(
+                {
+                    "path": path,
+                    "pattern": pattern_name,
+                    "value": value,
+                    "match": match.group(0),
+                }
+            )
+    return hits
+
+
+def check_placeholder_detector(
+    payloads: dict[str, AdapterPayload | None],
+) -> CheckResult:
+    """FAIL if any payload string matches a known placeholder pattern.
+
+    A direct content-scan complement to ``cross_source_consistency``,
+    which only catches placeholders that happen to break cross-source
+    agreement. Once a placeholder is detected, the verdict is **FAIL** —
+    placeholders shipping to production is unacceptable, and the
+    ``--strict --fail-on-warn`` pipeline blocks the subsequent publish.
+    """
+    name = "placeholder_detector"
+    per_source: dict[str, list[dict[str, str]]] = {}
+    summary_lines: list[str] = []
+    for source_key, payload in payloads.items():
+        hits = scan_payload_for_placeholders(payload)
+        if hits:
+            per_source[source_key] = hits
+            first = hits[0]
+            more = f" (+ {len(hits) - 1} more)" if len(hits) > 1 else ""
+            summary_lines.append(
+                f"{source_key} {first['path']} matched {first['pattern']} "
+                f"('{first['match']}'){more}"
+            )
+
+    detail = {
+        "patterns": [p[0] for p in _PLACEHOLDER_PATTERNS],
+        "path_allowlist": list(_PLACEHOLDER_PATH_ALLOWLIST),
+        "hits_per_source": per_source,
+    }
+    if per_source:
+        return CheckResult(
+            name=name,
+            level=FAIL,
+            message="; ".join(summary_lines),
+            detail=detail,
+        )
+    return CheckResult(
+        name=name,
+        level=INFO,
+        message=(
+            f"no placeholder patterns detected across "
+            f"{len(payloads)} sources ({len(_PLACEHOLDER_PATTERNS)} patterns scanned)."
+        ),
+        detail=detail,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Temporal coherence check (WARN-level)
+# ---------------------------------------------------------------------------
+#
+# Same source should not flip directional signals day-over-day without an
+# accompanying regime change flag. A "bullish → bearish → bullish" zigzag
+# from one provider is either a data bug or a real regime flip; the
+# operator should see the WARN and decide.
+#
+# History layout, persisted to ``output/signal_history.json``::
+#
+#     {
+#       "super_pricing": {
+#         "policy_radar.新能源汽车": [
+#           {"date": "2026-05-17", "signal": "bullish"},
+#           {"date": "2026-05-18", "signal": "bearish"},
+#           ...
+#         ],
+#         ...
+#       },
+#       ...
+#     }
+#
+# We cap each per-key list at TEMPORAL_HISTORY_DAYS entries.
+
+
+@dataclass(slots=True)
+class SignalObservation:
+    """One day's directional reading of a tracked signal."""
+
+    date: str  # YYYY-MM-DD
+    signal: str  # "bullish" | "bearish" | "neutral" (lowercased)
+
+
+def load_signal_history(
+    path: Path,
+) -> dict[str, dict[str, list[SignalObservation]]]:
+    """Read the persisted per-source signal history; tolerate missing files."""
+    if not path.exists():
+        return {}
+    try:
+        with path.open(encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    out: dict[str, dict[str, list[SignalObservation]]] = {}
+    if not isinstance(raw, dict):
+        return out
+    for source_key, signals in raw.items():
+        if not isinstance(signals, dict):
+            continue
+        per_signal: dict[str, list[SignalObservation]] = {}
+        for signal_key, entries in signals.items():
+            if not isinstance(entries, list):
+                continue
+            loaded: list[SignalObservation] = []
+            for row in entries:
+                if not isinstance(row, dict):
+                    continue
+                date = str(row.get("date", "") or "")
+                signal = str(row.get("signal", "") or "").strip().lower()
+                if not date or not signal:
+                    continue
+                loaded.append(SignalObservation(date=date, signal=signal))
+            if loaded:
+                per_signal[str(signal_key)] = loaded
+        if per_signal:
+            out[str(source_key)] = per_signal
+    return out
+
+
+def save_signal_history(
+    path: Path,
+    history: dict[str, dict[str, list[SignalObservation]]],
+    *,
+    max_entries: int = TEMPORAL_HISTORY_DAYS,
+) -> None:
+    """Persist per-source signal history, trimming each list to ``max_entries``."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    out: dict[str, dict[str, list[dict[str, str]]]] = {}
+    for source_key, signals in history.items():
+        per_signal: dict[str, list[dict[str, str]]] = {}
+        for signal_key, entries in signals.items():
+            trimmed = entries[-max_entries:] if len(entries) > max_entries else entries
+            per_signal[signal_key] = [
+                {"date": e.date, "signal": e.signal} for e in trimmed
+            ]
+        out[source_key] = per_signal
+    with path.open("w", encoding="utf-8") as fh:
+        json.dump(out, fh, ensure_ascii=False, indent=2, sort_keys=True)
+        fh.write("\n")
+
+
+def _extract_signals_for_temporal(
+    source_key: str, payload: AdapterPayload | None
+) -> dict[str, str]:
+    """Pull today's directional signals out of a payload, keyed by signal id.
+
+    Mirrors the cross-source consistency adapters but emits a flat
+    ``{signal_id: direction}`` map keyed by source-namespaced ids so they
+    don't collide across sources in the on-disk history.
+    """
+    if payload is None:
+        return {}
+    out: dict[str, str] = {}
+    if source_key == "super_pricing":
+        rows = (payload.data.get("policy_radar") or {}).get(
+            "industry_signals"
+        ) or []
+        if isinstance(rows, dict):
+            iterable: Iterable[tuple[str, Any]] = list(rows.items())
+            for name, info in iterable:
+                if not isinstance(info, dict):
+                    continue
+                sig = str(info.get("signal", "")).strip().lower()
+                if sig:
+                    out[f"policy_radar.{name}"] = sig
+        elif isinstance(rows, list):
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                name = str(row.get("industry", "")).strip()
+                sig = str(row.get("signal", "")).strip().lower()
+                if name and sig:
+                    out[f"policy_radar.{name}"] = sig
+        # Regime classifier (if present): emit one signal per regime field.
+        regime = (payload.data.get("regime_classifier") or {})
+        regime_name = str(regime.get("regime_name", "")).strip().lower()
+        if regime_name:
+            out["regime_classifier.regime_name"] = regime_name
+    elif source_key == "quant_trading":
+        rows = payload.data.get("industries") or []
+        if isinstance(rows, list):
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                name = str(
+                    row.get("industry") or row.get("industry_name") or ""
+                ).strip()
+                sig = str(row.get("policy_signal", "")).strip().lower()
+                if name and sig:
+                    out[f"industries.{name}"] = sig
+        # Composite signal (etf_rotation regime recommendation if shipped).
+        rot = (payload.data.get("etf_rotation") or {}).get(
+            "regime_recommendation"
+        ) or {}
+        rec = str(rot.get("recommended_strategy", "")).strip().lower()
+        if rec:
+            out["etf_rotation.recommended_strategy"] = rec
+    return out
+
+
+def _is_regime_change_present(payload: AdapterPayload | None) -> bool:
+    """Detect a "regime change" annotation that legitimizes a sign flip.
+
+    Sources can opt into the regime-change opt-out by setting any of:
+
+    * ``payload.data["regime_change_event"]`` truthy,
+    * ``payload.data["regime_classifier"]["regime_change_event"]`` truthy,
+    * ``payload.data["meta"]["regime_change_event"]`` truthy.
+
+    The check is intentionally loose — operators can flag a real volatility
+    event without coordinating on field placement.
+    """
+    if payload is None:
+        return False
+    candidates = (
+        payload.data.get("regime_change_event"),
+        (payload.data.get("regime_classifier") or {}).get("regime_change_event"),
+        (payload.data.get("meta") or {}).get("regime_change_event"),
+    )
+    return any(bool(c) for c in candidates)
+
+
+def _sign_flips(observations: list[SignalObservation]) -> tuple[int, int]:
+    """Compute ``(flip_count, transition_count)`` over a series.
+
+    A "sign flip" is a transition between non-neutral opposite directions
+    (``bullish ↔ bearish``). Transitions involving ``neutral`` are counted
+    as transitions but not flips — a clean ramp through neutral isn't
+    considered jittery.
+    """
+    if len(observations) < 2:
+        return (0, 0)
+    flips = 0
+    transitions = 0
+    # ``observations`` vs ``observations[1:]`` is intentionally pairwise on
+    # consecutive elements — strict zip would reject the length mismatch.
+    for prev, curr in zip(observations[:-1], observations[1:], strict=True):
+        transitions += 1
+        if (prev.signal == "bullish" and curr.signal == "bearish") or (
+            prev.signal == "bearish" and curr.signal == "bullish"
+        ):
+            flips += 1
+    return (flips, transitions)
+
+
+def _append_observation(
+    history: dict[str, dict[str, list[SignalObservation]]],
+    *,
+    source_key: str,
+    signal_key: str,
+    today: str,
+    signal: str,
+) -> list[SignalObservation]:
+    """Append today's observation, replacing same-day record if present."""
+    per_source = history.setdefault(source_key, {})
+    series = per_source.setdefault(signal_key, [])
+    if series and series[-1].date == today:
+        series[-1] = SignalObservation(date=today, signal=signal)
+    else:
+        series.append(SignalObservation(date=today, signal=signal))
+    return series
+
+
+def check_temporal_coherence(
+    payloads: dict[str, AdapterPayload | None],
+    *,
+    history_path: Path | None = None,
+    today: str | None = None,
+    persist: bool = True,
+    flip_rate_max: float = TEMPORAL_FLIP_RATE_MAX,
+    min_observations: int = TEMPORAL_MIN_OBSERVATIONS,
+    history_days: int = TEMPORAL_HISTORY_DAYS,
+) -> CheckResult:
+    """WARN when a source's daily signals zigzag without a regime-change flag.
+
+    For each source, append today's signals to the rolling history file
+    and compute the per-signal day-over-day sign-flip rate. If any signal
+    exceeds ``flip_rate_max`` AND the source's payload carries no
+    ``regime_change_event`` annotation, emit WARN. The check intentionally
+    stays WARN (not FAIL) — a real volatility event can produce a high
+    flip rate, and the operator's eye is the final filter.
+
+    Empty / missing payloads gracefully skip — there is no time series to
+    score, so the check returns INFO.
+    """
+    name = "temporal_coherence"
+    history_path = history_path if history_path else DEFAULT_SIGNAL_HISTORY
+    today = today or datetime.now(UTC).strftime("%Y-%m-%d")
+
+    history = load_signal_history(history_path)
+    per_source: dict[str, dict[str, Any]] = {}
+    jittery: list[dict[str, Any]] = []
+    any_observation_recorded = False
+
+    for source_key, payload in payloads.items():
+        regime_change = _is_regime_change_present(payload)
+        signals_today = _extract_signals_for_temporal(source_key, payload)
+        per_signal_report: dict[str, dict[str, Any]] = {}
+        if not signals_today:
+            per_source[source_key] = {
+                "status": "no_signals",
+                "regime_change_event": regime_change,
+                "signals": per_signal_report,
+            }
+            continue
+        any_observation_recorded = True
+        for signal_key, direction in signals_today.items():
+            series = _append_observation(
+                history,
+                source_key=source_key,
+                signal_key=signal_key,
+                today=today,
+                signal=direction,
+            )
+            # Keep only the most recent N observations for flip-rate math.
+            window = series[-history_days:] if len(series) > history_days else series
+            flips, transitions = _sign_flips(window)
+            flip_rate = (flips / transitions) if transitions > 0 else 0.0
+            entry: dict[str, Any] = {
+                "observations": len(window),
+                "flips": flips,
+                "transitions": transitions,
+                "flip_rate": round(flip_rate, 3),
+                "today": direction,
+            }
+            per_signal_report[signal_key] = entry
+            if len(window) >= min_observations and flip_rate > flip_rate_max:
+                # WARN candidate. Suppress if the source declared a regime
+                # change for the day — that legitimizes the flip.
+                if not regime_change:
+                    jittery.append(
+                        {
+                            "source": source_key,
+                            "signal": signal_key,
+                            "flip_rate": entry["flip_rate"],
+                            "flips": flips,
+                            "transitions": transitions,
+                            "observations": len(window),
+                        }
+                    )
+        per_source[source_key] = {
+            "status": "scored",
+            "regime_change_event": regime_change,
+            "signals": per_signal_report,
+        }
+
+    if persist and any_observation_recorded:
+        save_signal_history(history_path, history, max_entries=history_days)
+
+    detail = {
+        "history_path": str(history_path),
+        "today": today,
+        "flip_rate_max": flip_rate_max,
+        "history_days": history_days,
+        "min_observations": min_observations,
+        "per_source": per_source,
+        "jittery": jittery,
+    }
+
+    if jittery:
+        first = jittery[0]
+        more = f" (+ {len(jittery) - 1} more)" if len(jittery) > 1 else ""
+        return CheckResult(
+            name=name,
+            level=WARN,
+            message=(
+                f"{first['source']}.{first['signal']} flipped "
+                f"{first['flips']}/{first['transitions']} transitions "
+                f"({first['flip_rate']:.0%} > {flip_rate_max:.0%}); "
+                f"no regime_change_event{more}"
+            ),
+            detail=detail,
+        )
+    if not any_observation_recorded:
+        return CheckResult(
+            name=name,
+            level=INFO,
+            message="no time-series signals available; temporal_coherence skipped.",
+            detail=detail,
+        )
+    return CheckResult(
+        name=name,
+        level=INFO,
+        message=(
+            f"day-over-day signal flips below {flip_rate_max:.0%} across "
+            f"{sum(len(s['signals']) for s in per_source.values())} signals."
+        ),
+        detail=detail,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Strict-mode aggregator
 # ---------------------------------------------------------------------------
 
@@ -807,18 +1326,21 @@ def run_strict_checks(
     today: str | None = None,
     persist: bool = True,
     include: tuple[str, ...] | None = None,
+    signal_history_path: Path | None = None,
 ) -> list[CheckResult]:
-    """Run any subset of the four quality checks.
+    """Run any subset of the six quality checks.
 
     ``include`` is a tuple of check identifiers — when ``None``, runs all
-    four. Identifiers map to: ``"fingerprint"``, ``"density"``,
-    ``"consistency"``, ``"schema"``.
+    six. Identifiers map to: ``"fingerprint"``, ``"density"``,
+    ``"consistency"``, ``"schema"``, ``"placeholder"``, ``"temporal"``.
     """
     include = include if include is not None else (
         "fingerprint",
         "density",
         "consistency",
         "schema",
+        "placeholder",
+        "temporal",
     )
     out: list[CheckResult] = []
     if "fingerprint" in include:
@@ -836,24 +1358,45 @@ def run_strict_checks(
         out.append(check_cross_source_consistency(payloads))
     if "schema" in include:
         out.append(check_schema_regression(payloads, schema_dir=schema_dir))
+    if "placeholder" in include:
+        out.append(check_placeholder_detector(payloads))
+    if "temporal" in include:
+        out.append(
+            check_temporal_coherence(
+                payloads,
+                history_path=signal_history_path,
+                today=today,
+                persist=persist,
+            )
+        )
     return out
 
 
 __all__ = [
     "DEFAULT_FINGERPRINT_HISTORY",
     "DEFAULT_SCHEMA_DIR",
+    "DEFAULT_SIGNAL_HISTORY",
     "FINGERPRINT_STALE_DAYS",
     "FingerprintEntry",
     "POLICY_IMPACT_FLOOR",
     "SIGNAL_DENSITY_MIN_RATIO",
+    "SignalObservation",
+    "TEMPORAL_FLIP_RATE_MAX",
+    "TEMPORAL_HISTORY_DAYS",
+    "TEMPORAL_MIN_OBSERVATIONS",
     "check_content_fingerprint_freshness",
     "check_cross_source_consistency",
+    "check_placeholder_detector",
     "check_schema_regression",
     "check_signal_density",
+    "check_temporal_coherence",
     "compute_policy_fingerprint",
     "load_fingerprint_history",
     "load_schema_baseline",
+    "load_signal_history",
     "run_strict_checks",
     "save_fingerprint_history",
+    "save_signal_history",
+    "scan_payload_for_placeholders",
     "update_fingerprint_history",
 ]

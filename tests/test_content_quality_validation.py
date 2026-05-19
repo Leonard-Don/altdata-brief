@@ -397,6 +397,7 @@ def test_strict_handles_empty_payloads_gracefully(tmp_path: Path) -> None:
         payloads,
         history_path=tmp_path / "fp.json",
         schema_dir=tmp_path,  # empty dir → schema_regression INFO (no baselines)
+        signal_history_path=tmp_path / "signal_hist.json",
         today="2026-05-19",
     )
     names = {r.name for r in results}
@@ -405,6 +406,8 @@ def test_strict_handles_empty_payloads_gracefully(tmp_path: Path) -> None:
         "signal_density",
         "cross_source_consistency",
         "schema_regression",
+        "placeholder_detector",
+        "temporal_coherence",
     }
     # Density: no rows anywhere → WARN; consistency: nothing to compare → INFO;
     # fingerprint: empty content → INFO ("skipped").
@@ -412,6 +415,10 @@ def test_strict_handles_empty_payloads_gracefully(tmp_path: Path) -> None:
     assert levels["signal_density"] == WARN
     assert levels["cross_source_consistency"] == INFO
     assert levels["content_fingerprint_freshness"] == INFO
+    # Placeholder detector against None payloads has nothing to scan → INFO.
+    assert levels["placeholder_detector"] == INFO
+    # Temporal coherence with no payloads has no time series → INFO (skipped).
+    assert levels["temporal_coherence"] == INFO
 
 
 # ---------------------------------------------------------------------------
@@ -496,20 +503,24 @@ def test_cli_validate_strict_runs_new_checks(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`validate --strict` extends the result list with the four quality checks."""
-    # Redirect fingerprint history to tmp so the test doesn't write to output/.
+    """`validate --strict` extends the result list with the six quality checks."""
+    # Redirect fingerprint + signal-history files to tmp so the test
+    # doesn't write to output/.
     monkeypatch.setattr(vq, "DEFAULT_FINGERPRINT_HISTORY", tmp_path / "fp.json")
+    monkeypatch.setattr(vq, "DEFAULT_SIGNAL_HISTORY", tmp_path / "signal_hist.json")
     code = main(["validate", "--strict", "--json"])
     out = capsys.readouterr().out
     parsed = json.loads(out)
     names = [c["name"] for c in parsed["checks"]]
-    # 5 freshness/structural + 4 quality = 9
-    assert len(parsed["checks"]) == 9
+    # 5 freshness/structural + 6 quality = 11
+    assert len(parsed["checks"]) == 11
     for required in (
         "content_fingerprint_freshness",
         "signal_density",
         "cross_source_consistency",
         "schema_regression",
+        "placeholder_detector",
+        "temporal_coherence",
     ):
         assert required in names
     assert code in (EXIT_OK, EXIT_WARN, EXIT_FAIL)
@@ -527,6 +538,8 @@ def test_cli_validate_default_skips_quality_checks(
     assert "signal_density" not in names
     assert "cross_source_consistency" not in names
     assert "schema_regression" not in names
+    assert "placeholder_detector" not in names
+    assert "temporal_coherence" not in names
     assert len(parsed["checks"]) == 5
     assert code in (EXIT_OK, EXIT_WARN, EXIT_FAIL)
 
@@ -546,5 +559,398 @@ def test_cli_validate_single_check_flag(
     assert "content_fingerprint_freshness" not in names
     assert "cross_source_consistency" not in names
     assert "schema_regression" not in names
+    assert len(parsed["checks"]) == 6  # 5 baseline + 1
+    assert code in (EXIT_OK, EXIT_WARN, EXIT_FAIL)
+
+
+# ---------------------------------------------------------------------------
+# 8. Placeholder detector (FAIL on shipped placeholder)
+# ---------------------------------------------------------------------------
+
+
+def test_placeholder_clean_payload_passes() -> None:
+    """Production-shaped payload with no placeholder strings → INFO."""
+    payloads = {
+        "super_pricing": _super_pricing_payload(
+            signals=[
+                {"industry": "新能源汽车", "avg_impact": -0.4, "mentions": 50, "signal": "bearish"},
+                {"industry": "电网", "avg_impact": 0.05, "mentions": 4, "signal": "neutral"},
+            ],
+            metals=[
+                {"metal": "copper", "name_cn": "铜", "price_change_pct": 1.2},
+            ],
+        ),
+        "quant_trading": _quant_payload(
+            industries=[
+                {
+                    "industry": "新能源汽车",
+                    "heat_score": 0.8,
+                    "policy_signal": "bullish",
+                    "policy_impact": 0.4,
+                    "mentions": 3,
+                }
+            ]
+        ),
+    }
+    r = vq.check_placeholder_detector(payloads)
+    assert r.level == INFO
+    assert "no placeholder" in r.message
+
+
+def test_placeholder_cjk_test_in_industry_name_fails() -> None:
+    """'测试' appearing in an industry name FAILs (the foundational bug)."""
+    payloads = {
+        "quant_trading": _quant_payload(
+            industries=[
+                {
+                    "industry": "测试行业",
+                    "heat_score": 0.5,
+                    "policy_signal": "neutral",
+                    "policy_impact": 0.0,
+                    "mentions": 0,
+                }
+            ]
+        )
+    }
+    r = vq.check_placeholder_detector(payloads)
+    assert r.level == FAIL
+    assert "测试" in r.message or "cjk_test" in r.message
+    assert r.detail is not None
+    hits = r.detail["hits_per_source"]["quant_trading"]
+    assert any(h["pattern"] == "cjk_test" for h in hits)
+
+
+def test_placeholder_todo_in_factor_description_fails() -> None:
+    """A 'TODO' string anywhere in the payload FAILs."""
+    payloads = {
+        "super_pricing": _payload(
+            "super_pricing",
+            {
+                "policy_radar": {
+                    "industry_signals": [
+                        {
+                            "industry": "电网",
+                            "signal": "neutral",
+                            "factor_description": "TODO: refine impact weighting",
+                            "avg_impact": 0.0,
+                        }
+                    ],
+                    "policy_count": 1,
+                },
+                "macro_hf": {"metals": []},
+            },
+        )
+    }
+    r = vq.check_placeholder_detector(payloads)
+    assert r.level == FAIL
+    assert r.detail is not None
+    hits = r.detail["hits_per_source"]["super_pricing"]
+    patterns = {h["pattern"] for h in hits}
+    assert "en_todo" in patterns
+
+
+def test_placeholder_false_positive_guard_single_char_shi() -> None:
+    """'试用期股' must NOT match — the single char '试' is not a placeholder."""
+    payloads = {
+        "quant_trading": _quant_payload(
+            industries=[
+                {
+                    "industry": "试用期股",  # legitimate Chinese industry term
+                    "heat_score": 0.5,
+                    "policy_signal": "neutral",
+                    "policy_impact": 0.0,
+                    "mentions": 2,
+                }
+            ]
+        )
+    }
+    r = vq.check_placeholder_detector(payloads)
+    assert r.level == INFO, (
+        f"single-char '试' must not be flagged; got {r.message}"
+    )
+
+
+def test_placeholder_xxx_scaffold_fails() -> None:
+    """'XXX' scaffold marker FAILs (catches templating leakage)."""
+    payloads = {
+        "index_research": _payload(
+            "index_research",
+            {
+                "verdicts": [
+                    {"hid": "H1", "note": "Will refactor metric XXX later."}
+                ]
+            },
+        )
+    }
+    r = vq.check_placeholder_detector(payloads)
+    assert r.level == FAIL
+    assert r.detail is not None
+    hits = r.detail["hits_per_source"]["index_research"]
+    assert any(h["pattern"] == "scaffold_xxx" for h in hits)
+
+
+def test_placeholder_regression_archived_quant_payload(tmp_path: Path) -> None:
+    """Loads the archived quant payload from when '测试行业' shipped → FAIL.
+
+    Saved at ``tests/fixtures/regression/quant_summary_with_test_industry.json``.
+    The check must detect the placeholder both inside ``providers.policy_radar``
+    and ``providers.industry_heat`` rows.
+    """
+    fixture = (
+        Path(__file__).parent
+        / "fixtures"
+        / "regression"
+        / "quant_summary_with_test_industry.json"
+    )
+    raw = json.loads(fixture.read_text(encoding="utf-8"))
+    payloads = {"quant_trading": _payload("quant_trading", raw)}
+    r = vq.check_placeholder_detector(payloads)
+    assert r.level == FAIL, "archived '测试行业' payload must FAIL the check"
+    assert r.detail is not None
+    hits = r.detail["hits_per_source"]["quant_trading"]
+    # At least two hits — the policy_radar entry AND the industry_heat entry.
+    test_hits = [h for h in hits if h["pattern"] == "cjk_test"]
+    assert len(test_hits) >= 2, (
+        f"expected ≥2 '测试' hits across policy_radar + industry_heat; got {hits}"
+    )
+    paths = {h["path"] for h in test_hits}
+    assert any("policy_radar" in p for p in paths)
+    assert any("industry_heat" in p for p in paths)
+
+
+def test_placeholder_allowlist_paper_trading_smoke_profile() -> None:
+    """`paper_trading.active_profiles` carries internal test names — INFO, not FAIL."""
+    payloads = {
+        "quant_trading": _payload(
+            "quant_trading",
+            {
+                "industries": [],
+                "paper_trading": {
+                    "active_profiles": ["e2e-smoke", "test_env"],
+                    "available": True,
+                },
+            },
+        )
+    }
+    r = vq.check_placeholder_detector(payloads)
+    assert r.level == INFO, (
+        f"allowlisted path should suppress placeholder hit; got {r.message}"
+    )
+
+
+def test_placeholder_cli_strict_fails_on_test_industry(
+    patched_default_paths: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`validate --strict` with a polluted payload exits non-zero (FAIL)."""
+    monkeypatch.setattr(vq, "DEFAULT_FINGERPRINT_HISTORY", tmp_path / "fp.json")
+    monkeypatch.setattr(vq, "DEFAULT_SIGNAL_HISTORY", tmp_path / "signal_hist.json")
+
+    bad_quant = _quant_payload(
+        industries=[
+            {
+                "industry": "测试行业",
+                "heat_score": 0.5,
+                "policy_signal": "neutral",
+                "policy_impact": 0.0,
+                "mentions": 0,
+            }
+        ]
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "build_default_adapters",
+        lambda config: {"quant_trading": _FakeAdapter(bad_quant)},
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "resolve_all_sources",
+        lambda adapters: {"quant_trading": _FakeResolution()},
+    )
+
+    code = main(["validate", "--strict", "--json"])
+    parsed = json.loads(capsys.readouterr().out)
+    placeholder = next(c for c in parsed["checks"] if c["name"] == "placeholder_detector")
+    assert placeholder["level"] == FAIL
+    # Strict + placeholder hit → process exit non-zero. Without --fail-on-warn,
+    # any FAIL escalates to EXIT_FAIL.
+    assert code == EXIT_FAIL
+
+
+# ---------------------------------------------------------------------------
+# 9. Temporal coherence (WARN on day-over-day jitter)
+# ---------------------------------------------------------------------------
+
+
+def test_temporal_stable_signal_passes(tmp_path: Path) -> None:
+    """7 days of the same signal → flip rate 0 → INFO."""
+    history_path = tmp_path / "signal_hist.json"
+    days = [f"2026-05-{12 + i:02d}" for i in range(7)]
+    for day in days:
+        payloads = {
+            "super_pricing": _super_pricing_payload(
+                signals={
+                    "新能源汽车": {
+                        "avg_impact": -0.4,
+                        "mentions": 50,
+                        "signal": "bearish",
+                    }
+                }
+            )
+        }
+        r = vq.check_temporal_coherence(
+            payloads, history_path=history_path, today=day
+        )
+    # Final-day verdict — stable bearish across 7 days.
+    assert r.level == INFO
+    assert r.detail is not None
+    sp_signals = r.detail["per_source"]["super_pricing"]["signals"]
+    flip_rates = [s["flip_rate"] for s in sp_signals.values()]
+    assert all(fr == 0.0 for fr in flip_rates)
+
+
+def test_temporal_jittery_signal_warns(tmp_path: Path) -> None:
+    """Alternating bullish/bearish for 6 days → 100% flip rate → WARN."""
+    history_path = tmp_path / "signal_hist.json"
+    rotation = ["bullish", "bearish", "bullish", "bearish", "bullish", "bearish"]
+    days = [f"2026-05-{12 + i:02d}" for i in range(6)]
+    for day, sig in zip(days, rotation, strict=True):
+        payloads = {
+            "super_pricing": _super_pricing_payload(
+                signals={
+                    "新能源汽车": {
+                        "avg_impact": -0.4 if sig == "bearish" else 0.4,
+                        "mentions": 50,
+                        "signal": sig,
+                    }
+                }
+            )
+        }
+        r = vq.check_temporal_coherence(
+            payloads, history_path=history_path, today=day
+        )
+    assert r.level == WARN
+    assert "新能源汽车" in r.message
+    assert r.detail is not None
+    jittery = r.detail["jittery"]
+    assert len(jittery) == 1
+    assert jittery[0]["flip_rate"] >= 0.9
+
+
+def test_temporal_jittery_with_regime_change_passes(tmp_path: Path) -> None:
+    """Same jitter pattern + ``regime_change_event=True`` → INFO (legitimized)."""
+    history_path = tmp_path / "signal_hist.json"
+    rotation = ["bullish", "bearish", "bullish", "bearish", "bullish", "bearish"]
+    days = [f"2026-05-{12 + i:02d}" for i in range(6)]
+    for day, sig in zip(days, rotation, strict=True):
+        # Build a super_pricing payload that ALSO carries a regime-change flag
+        # — operators set this when a real volatility event drives the flips.
+        payload_data = {
+            "policy_radar": {
+                "industry_signals": {
+                    "新能源汽车": {
+                        "avg_impact": -0.4 if sig == "bearish" else 0.4,
+                        "mentions": 50,
+                        "signal": sig,
+                    }
+                },
+                "policy_count": 1,
+            },
+            "macro_hf": {"metals": []},
+            "regime_change_event": True,
+        }
+        payloads = {"super_pricing": _payload("super_pricing", payload_data)}
+        r = vq.check_temporal_coherence(
+            payloads, history_path=history_path, today=day
+        )
+    assert r.level == INFO, (
+        "regime_change_event=True should suppress WARN on a legitimate flip"
+    )
+    assert r.detail is not None
+    assert r.detail["jittery"] == []
+    assert r.detail["per_source"]["super_pricing"]["regime_change_event"] is True
+
+
+def test_temporal_missing_time_series_skipped(tmp_path: Path) -> None:
+    """No signals to score across all sources → INFO ("skipped")."""
+    history_path = tmp_path / "signal_hist.json"
+    payloads: dict[str, AdapterPayload | None] = {
+        "super_pricing": None,
+        "quant_trading": None,
+        "index_research": None,
+        "etf_512400": None,
+    }
+    r = vq.check_temporal_coherence(
+        payloads, history_path=history_path, today="2026-05-19"
+    )
+    assert r.level == INFO
+    assert "skipped" in r.message.lower()
+    # History file should NOT have been written when there's nothing to record.
+    assert not history_path.exists()
+
+
+def test_temporal_history_persistence_and_trimming(tmp_path: Path) -> None:
+    """Rolling window caps at TEMPORAL_HISTORY_DAYS; older entries get dropped."""
+    history_path = tmp_path / "signal_hist.json"
+    # 10 days of stable bullish → series gets trimmed to TEMPORAL_HISTORY_DAYS=7.
+    days = [f"2026-05-{10 + i:02d}" for i in range(10)]
+    for day in days:
+        payloads = {
+            "super_pricing": _super_pricing_payload(
+                signals={
+                    "AI算力": {
+                        "avg_impact": 0.3,
+                        "mentions": 5,
+                        "signal": "bullish",
+                    }
+                }
+            )
+        }
+        vq.check_temporal_coherence(
+            payloads, history_path=history_path, today=day
+        )
+    loaded = vq.load_signal_history(history_path)
+    series = loaded["super_pricing"]["policy_radar.AI算力"]
+    assert len(series) == vq.TEMPORAL_HISTORY_DAYS
+    # The most recent observation date must be retained.
+    assert series[-1].date == days[-1]
+
+
+# ---------------------------------------------------------------------------
+# 10. Per-check CLI flags for the new checks
+# ---------------------------------------------------------------------------
+
+
+def test_cli_check_placeholder_flag(
+    patched_default_paths: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``--check-placeholder`` runs only the placeholder detector."""
+    code = main(["validate", "--check-placeholder", "--json"])
+    parsed = json.loads(capsys.readouterr().out)
+    names = [c["name"] for c in parsed["checks"]]
+    assert "placeholder_detector" in names
+    assert "temporal_coherence" not in names
+    assert "signal_density" not in names
+    assert len(parsed["checks"]) == 6  # 5 baseline + 1
+    assert code in (EXIT_OK, EXIT_WARN, EXIT_FAIL)
+
+
+def test_cli_check_temporal_flag(
+    patched_default_paths: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``--check-temporal`` runs only the temporal coherence check."""
+    monkeypatch.setattr(vq, "DEFAULT_SIGNAL_HISTORY", tmp_path / "signal_hist.json")
+    code = main(["validate", "--check-temporal", "--json"])
+    parsed = json.loads(capsys.readouterr().out)
+    names = [c["name"] for c in parsed["checks"]]
+    assert "temporal_coherence" in names
+    assert "placeholder_detector" not in names
+    assert "signal_density" not in names
     assert len(parsed["checks"]) == 6  # 5 baseline + 1
     assert code in (EXIT_OK, EXIT_WARN, EXIT_FAIL)

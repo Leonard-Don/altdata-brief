@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-15T03:44:32+00:00",
+  "source_codebase_version": "5.0.0",
+  "providers": {
+    "policy_radar": {
+      "policy_count": 7,
+      "last_refresh_at": "2026-05-15T03:30:00.000000",
+      "top_industries": [
+        {"industry": "新能源汽车", "avg_impact": -0.18, "mentions": 33, "signal": "bearish"},
+        {"industry": "测试行业", "avg_impact": 0.50, "mentions": 1, "signal": "bullish"},
+        {"industry": "电网", "avg_impact": 0.04, "mentions": 7, "signal": "neutral"}
+      ]
+    },
+    "industry_heat": {
+      "last_refresh_at": "2026-05-15T03:30:00.000000",
+      "top_industries_by_score": [
+        {
+          "industry": "测试行业",
+          "heat_score": 0.91,
+          "policy_signal": "bullish",
+          "policy_impact": 0.50,
+          "mentions": 1
+        }
+      ]
+    },
+    "paper_trading": {
+      "active_profiles": ["e2e-smoke"],
+      "available": true,
+      "profile_count": 1
+    }
+  }
+}
