@@ -58,6 +58,50 @@ def test_inventory_happy_path_tags_metals(super_pricing_cache: Path) -> None:
     assert "持稳" in text  # 镍 stable triggers tag
 
 
+def test_inventory_zero_value_metal_collapses_to_no_weekly_change() -> None:
+    """When both price_change_pct and volatility are 0, the format strips
+    the noise prefix '周价格变化 +0.00% · 波动率 0.0' and renders '无周变动'
+    instead — same pattern as the industry-section M2 fix (commit 1e92acd).
+    """
+    from cn_altdata_brief.synthesis.inventory import _format_metal
+
+    line = _format_metal(
+        {
+            "metal": "Cu",
+            "name_cn": "铜",
+            "price_change_pct": 0.0,
+            "volatility": 0.0,
+            "trend": "rising",
+            "confidence": 0.01,
+        }
+    )
+    assert "无周变动" in line
+    assert "+0.00%" not in line
+    assert "波动率 0.0" not in line
+    # Trend, label, confidence still rendered
+    assert "趋势=上行" in line
+    assert "置信度=0.01" in line
+
+
+def test_inventory_nonzero_value_metal_preserves_existing_format() -> None:
+    """Non-zero data path is unchanged — full format with percent + volatility."""
+    from cn_altdata_brief.synthesis.inventory import _format_metal
+
+    line = _format_metal(
+        {
+            "metal": "Cu",
+            "name_cn": "铜",
+            "price_change_pct": -1.85,
+            "volatility": 0.42,
+            "trend": "falling",
+            "confidence": 0.75,
+        }
+    )
+    assert "周价格变化 -1.85%" in line
+    assert "波动率 0.4" in line
+    assert "无周变动" not in line
+
+
 # ---- etf_flow -------------------------------------------------------------
 
 
