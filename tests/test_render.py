@@ -175,12 +175,18 @@ def test_render_site_index_empty_folder(tmp_path: Path) -> None:
 def test_render_site_index_with_briefs(tmp_path: Path) -> None:
     (tmp_path / "2026-05-17.md").write_text("# brief 1", encoding="utf-8")
     (tmp_path / "2026-05-16.md").write_text("# brief 2", encoding="utf-8")
+    (tmp_path / "2026-05-17.en.md").write_text("# translated sibling", encoding="utf-8")
+    (tmp_path / "latest.md").write_text("# latest alias", encoding="utf-8")
+    (tmp_path / "2026-99-99.md").write_text("# malformed date", encoding="utf-8")
     path = render_site_index(tmp_path)
     text = path.read_text(encoding="utf-8")
     # newest first
     idx_17 = text.index("2026-05-17.md")
     idx_16 = text.index("2026-05-16.md")
     assert idx_17 < idx_16
+    assert "2026-05-17.en.md" not in text
+    assert "latest.md" not in text
+    assert "2026-99-99.md" not in text
 
 
 def test_render_feed_with_briefs(tmp_path: Path) -> None:
