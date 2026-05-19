@@ -13,6 +13,11 @@
 # when hard data-quality preconditions trip — empty industries, NaN
 # metals, or incomplete CMA verdicts. WARN-level freshness signals (for
 # example a stale ETF snapshot) are logged but do not stop local generation.
+#
+# v0.12 adds an opt-in content-quality pass. Set CN_ALTDATA_BRIEF_STRICT=1
+# in the environment to add --strict --fail-on-warn to the pre-flight
+# validate call: fingerprint, density, consistency, and schema checks run;
+# any WARN/FAIL or validator runtime error aborts before publishing.
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,12 +32,23 @@ uv sync --quiet
 
 # Pre-flight: refuse to generate when data-quality preconditions FAIL.
 # WARN-level signals (e.g. stale ETF snapshot) are tolerated locally;
-# CI uses `--fail-on-warn` to be stricter.
-echo "[generate_daily] pre-flight validate ..."
+# CI uses `--fail-on-warn` to be stricter. CN_ALTDATA_BRIEF_STRICT=1
+# additionally runs the v0.12 content-quality checks before generation.
+validate_args=()
+if [[ "${CN_ALTDATA_BRIEF_STRICT:-0}" == "1" ]]; then
+    validate_args+=(--strict --fail-on-warn)
+    echo "[generate_daily] pre-flight validate --strict --fail-on-warn ..."
+else
+    echo "[generate_daily] pre-flight validate ..."
+fi
 set +e
-uv run cn-altdata-brief validate
+uv run cn-altdata-brief validate "${validate_args[@]}"
 rc=$?
 set -e
+if [[ "${CN_ALTDATA_BRIEF_STRICT:-0}" == "1" && "$rc" -ne 0 ]]; then
+    echo "[generate_daily] strict validate FAILED/WARNED (exit=$rc); aborting before publish."
+    exit "$rc"
+fi
 if [ "$rc" -ge 2 ]; then
     echo "[generate_daily] validate FAILED (exit=$rc); aborting before publish."
     exit "$rc"

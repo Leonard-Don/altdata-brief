@@ -1,0 +1,11 @@
+{
+  "_comment": "Schema baseline for index_research. Verdicts CSV / public summary, normalized to AdapterPayload.data shape.",
+  "baseline_version": 1,
+  "source": "index_research",
+  "expected_payload_keys": {
+    "_root": {
+      "required": ["verdicts", "pap_changes"],
+      "optional": ["verdicts_path", "pap_path", "figure_links", "sensitivity", "hs300_rdd", "pap_baseline", "pap_deviation_summary", "public_summary_path", "schema_version", "generated_at", "source_mode"]
+    }
+  }
+}

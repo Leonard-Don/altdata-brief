@@ -1,0 +1,12 @@
+{
+  "_comment": "Schema baseline for quant_trading. The adapter coalesces both cache and public-summary shapes into a uniform internal payload — these are the keys synthesis expects.",
+  "baseline_version": 1,
+  "source": "quant_trading",
+  "expected_payload_keys": {
+    "_root": {
+      "required": ["industries", "policy_count"],
+      "optional": ["policy_timestamp", "etf_rotation", "paper_trading", "source_mode", "cache_path", "public_summary_path", "schema_version", "generated_at"]
+    }
+  },
+  "_note": "industries is a sorted list of {industry, heat_score, policy_signal, policy_impact, mentions} dicts. We don't enforce list-row schemas here — the adapter normalizes them."
+}
