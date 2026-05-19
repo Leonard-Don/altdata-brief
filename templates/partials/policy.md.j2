@@ -12,6 +12,6 @@
 > 本批次政策雷达累计 {{ policy.policy_count }} 条政策记录，置信度={{ '%.3f'|format(policy.confidence) if policy.confidence is not none else '暂无' }}。
 {% endif %}
 
-**来源：** {{ policy.sources|join(' · ') if policy.sources else '暂无' }}{% if policy.timestamp %} · 缓存时间=`{{ policy.timestamp }}`{% endif %}
+**来源：** {{ policy.sources|join(' · ') if policy.sources else '暂无' }}{% if policy.timestamp %} · 缓存时间=`{{ beijing_time(policy.timestamp) }}`{% endif %}
 
 ---

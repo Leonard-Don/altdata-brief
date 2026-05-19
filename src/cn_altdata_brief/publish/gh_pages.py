@@ -899,7 +899,14 @@ def _render_index_md(
     a third table for monthly digests so the cadence trilogy
     (daily / weekly / monthly) is visible on the landing page.
     """
-    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
+    # Reader-facing "最后生成" stamp uses Beijing time so Chinese
+    # readers don't need to mentally add 8h. The fingerprint marker
+    # below tracks the same value verbatim — equality is what the
+    # client-side refresh script uses to detect updates, so we keep
+    # the two strings in lockstep.
+    from cn_altdata_brief.render.site import _format_beijing_time
+
+    now = _format_beijing_time(datetime.now(UTC), with_seconds=False)
     lines: list[str] = [
         "---",
         "layout: default",

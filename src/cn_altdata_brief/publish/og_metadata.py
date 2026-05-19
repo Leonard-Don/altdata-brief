@@ -56,6 +56,74 @@ _DESCRIPTION_SKIP_PREFIXES = (
 # both.
 _DESCRIPTION_MAX_CHARS = 200
 
+# Markdown emphasis strippers — when a brief line ends up in an OG /
+# Twitter description, the consuming feed reader renders it as plain
+# text. Leaving the raw ``**word**`` markers in means the asterisks
+# show up literally in the preview card. We strip them at publish time
+# so WeChat / Mastodon / Twitter cards display clean prose.
+#
+# Heuristics (intentionally narrow — math/formula contexts must survive):
+# - Only strip emphasis when the marker is **adjacent** to a word
+#   character (CJK or ASCII alnum / underscore) on at least one side.
+#   ``2 * 3 = 6`` (spaces around ``*``) stays untouched.
+# - Run the patterns repeatedly until the input is stable so
+#   ``***strong***`` collapses to ``strong`` and the function is
+#   idempotent.
+# - ``\w`` in Python's ``re`` matches Unicode letters/digits by default,
+#   which is what we want for CJK content.
+_EMPHASIS_PATTERNS = (
+    # ``**bold**`` — leading + trailing word boundary near a ``*``.
+    re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*", re.DOTALL),
+    # ``__bold__``
+    re.compile(r"__(?=\S)(.+?)(?<=\S)__", re.DOTALL),
+    # ``*italic*`` — single ``*``; require word-char adjacency on at
+    # least one side so ``2 * 3 = 6`` stays put.
+    re.compile(r"(?<![\*\w])\*(?=\w)([^\*\s][^\*]*?)(?<=\S)\*(?!\*)", re.DOTALL),
+    # ``_italic_`` — single ``_``; same adjacency rule. Underscores
+    # inside identifiers (``foo_bar``) are safe because we require a
+    # non-word char before the opening ``_``.
+    re.compile(r"(?<![_\w])_(?=\w)([^_\s][^_]*?)(?<=\S)_(?!_)", re.DOTALL),
+    # `` `code` `` — single backtick; balanced pair around at least one
+    # non-backtick char.
+    re.compile(r"`([^`]+)`"),
+)
+
+
+def _strip_md_emphasis(text: str) -> str:
+    """Strip Markdown emphasis / inline code from ``text``.
+
+    Returns plain prose suitable for an OG/Twitter Card description.
+    Bare ``**`` or ``*`` not adjacent to word characters (e.g. in
+    formulas) is left alone. The function is idempotent — running it
+    twice yields the same result as running it once.
+    """
+    if not text:
+        return text
+    previous = None
+    current = text
+    # Iterate until a fixed point so nested markers (``***x***``) and
+    # back-to-back patterns (`` `**x**` ``) collapse fully.
+    while current != previous:
+        previous = current
+        for pattern in _EMPHASIS_PATTERNS:
+            current = pattern.sub(r"\1", current)
+    return current
+
+
+# OG / Twitter field keys whose values are user-facing prose and so
+# should pass through the emphasis stripper. URL / image / locale /
+# timestamp fields are intentionally excluded — those are machine
+# identifiers and must stay literal.
+_TEXT_OG_KEYS: frozenset[str] = frozenset(
+    {
+        "og:title",
+        "og:description",
+        "twitter:title",
+        "twitter:description",
+        "article:section",
+    }
+)
+
 
 def generate_og_tags(
     brief_path: Path,
@@ -122,6 +190,12 @@ def generate_og_tags(
     if image_url:
         tags["og:image"] = image_url
         tags["twitter:image"] = image_url
+    # Strip markdown emphasis from every user-facing prose field. URLs,
+    # image paths, locale, dates etc. are untouched — only the keys in
+    # ``_TEXT_OG_KEYS`` go through the stripper.
+    for key in _TEXT_OG_KEYS:
+        if key in tags and tags[key]:
+            tags[key] = _strip_md_emphasis(tags[key])
     return tags
 
 

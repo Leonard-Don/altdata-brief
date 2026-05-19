@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from cn_altdata_brief.adapters.base import AdapterPayload
+from cn_altdata_brief.render.site import _format_beijing_time
 
 
 def synthesize_etf_flow(
@@ -93,7 +94,14 @@ def _quote_source_usable(snap: dict[str, Any]) -> bool:
 
 def _format_quote_unavailable(snap: dict[str, Any]) -> str:
     trade_date = snap.get("trade_date") or "未知"
-    generated_at = snap.get("generated_at") or "未知"
+    raw_generated_at = snap.get("generated_at")
+    # Convert the upstream snapshot's UTC ISO timestamp to Beijing time
+    # for the brief body. When the value is missing or unparseable the
+    # formatter returns the input untouched, preserving the "未知"
+    # fallback path.
+    generated_at = (
+        _format_beijing_time(raw_generated_at) if raw_generated_at else "未知"
+    )
     return (
         f"**{snap.get('name', 'ETF 512400')}** ({snap.get('code', '512400')}) · "
         f"行情源降级，当前价未采用（快照交易日={trade_date}，生成时间={generated_at}）"

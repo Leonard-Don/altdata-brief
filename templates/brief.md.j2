@@ -15,7 +15,7 @@ llm_output_tokens: {{ llm.output_tokens if llm.output_tokens is not none else 'n
 
 # 中国另类数据日报 — {{ date }}
 
-> 由 `cn-altdata-brief` 在 {{ fetched_at }} 自动生成，合成自 4 个公开摘要/快照数据源。
+> 由 `cn-altdata-brief` 在 {{ beijing_time(fetched_at) }} 自动生成，合成自 4 个公开摘要/快照数据源。
 > 本简报是公开另类数据流程的展示窗口，详见 [项目说明](../README.md)。
 
 ---
@@ -34,7 +34,7 @@ llm_output_tokens: {{ llm.output_tokens if llm.output_tokens is not none else 'n
 
 ## 元信息
 
-- 生成时间：`{{ fetched_at }}`
+- 生成时间：`{{ beijing_time(fetched_at) }}`
 - 数据日期：`{{ date }}`
 - 上游项目：super-pricing-system · quant-trading-system · index-inclusion-research · ETF 512400
 {% if llm.used %}
