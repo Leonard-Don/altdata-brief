@@ -8,6 +8,8 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
+from cn_altdata_brief.render.site import _format_beijing_time
+
 DEFAULT_TEMPLATE_DIR = Path(__file__).resolve().parents[3] / "templates"
 
 
@@ -39,13 +41,20 @@ def _default_llm_context(observation: dict[str, Any] | None = None) -> dict[str,
 
 
 def _env(template_dir: Path) -> Environment:
-    return Environment(
+    env = Environment(
         loader=FileSystemLoader(str(template_dir)),
         autoescape=select_autoescape(default=False),
         trim_blocks=True,
         lstrip_blocks=True,
         undefined=StrictUndefined,
     )
+    # Expose the Beijing-time formatter to every template under the
+    # ``beijing_time`` name. Frontmatter timestamps stay raw (machine
+    # readers parse them as ISO 8601 / RFC 3339); the formatter is
+    # opt-in per template line so we only convert user-visible body
+    # copy and leave the metadata blocks alone.
+    env.globals["beijing_time"] = _format_beijing_time
+    return env
 
 
 def render_brief_markdown(

@@ -8,9 +8,10 @@ from cn_altdata_brief.render.digest import (
 from cn_altdata_brief.render.markdown import render_brief_markdown
 from cn_altdata_brief.render.og_image import chart_url_for, pick_og_chart
 from cn_altdata_brief.render.rss import render_atom_feed, render_feed
-from cn_altdata_brief.render.site import render_site_index
+from cn_altdata_brief.render.site import _format_beijing_time, render_site_index
 
 __all__ = [
+    "_format_beijing_time",
     "chart_url_for",
     "pick_og_chart",
     "render_all_charts",

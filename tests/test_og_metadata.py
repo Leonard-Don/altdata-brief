@@ -20,6 +20,7 @@ from xml.etree import ElementTree as ET
 
 from cn_altdata_brief.publish.og_metadata import (
     DEFAULT_SITE_URL,
+    _strip_md_emphasis,
     generate_og_tags,
     render_meta_tags,
     signal_categories_for,
@@ -468,6 +469,74 @@ def test_inject_og_frontmatter_preserves_existing_keys(tmp_path: Path) -> None:
     _inject_og_frontmatter(brief, tags)
     out2 = brief.read_text(encoding="utf-8")
     assert out2.count("og_title:") == 1
+
+
+# ---------------------------------------------------------------------------
+# 9. Markdown emphasis stripper for OG / Twitter fields
+# ---------------------------------------------------------------------------
+
+
+def test_strip_md_emphasis_bold_double_asterisks() -> None:
+    assert _strip_md_emphasis("**word**") == "word"
+
+
+def test_strip_md_emphasis_real_brief_og_line() -> None:
+    raw = "**中文**：x · y"
+    assert _strip_md_emphasis(raw) == "中文：x · y"
+
+
+def test_strip_md_emphasis_nested_strong() -> None:
+    # ``***x***`` is bold+italic in Markdown; both layers should collapse.
+    assert _strip_md_emphasis("***strong***") == "strong"
+
+
+def test_strip_md_emphasis_leaves_math_asterisks_alone() -> None:
+    # Asterisks surrounded by whitespace are arithmetic, not emphasis.
+    assert _strip_md_emphasis("2 * 3 = 6") == "2 * 3 = 6"
+
+
+def test_strip_md_emphasis_unchanged_when_no_emphasis() -> None:
+    plain = "纯文本无样式 plain prose"
+    assert _strip_md_emphasis(plain) == plain
+
+
+def test_strip_md_emphasis_idempotent() -> None:
+    raw = "**AI算力**：政策影响=+1.000（正向）· `code` __also__ *italic*"
+    once = _strip_md_emphasis(raw)
+    twice = _strip_md_emphasis(once)
+    assert once == twice
+
+
+def test_generate_og_tags_strips_emphasis_from_user_facing_fields(tmp_path: Path) -> None:
+    brief = tmp_path / "2026-05-19.md"
+    brief.write_text(
+        """---
+date: 2026-05-19
+---
+
+# CN AltData Brief — 2026-05-19
+
+## 1. 政策动向
+
+- **AI算力**：政策影响=+1.000（正向）· 提及次数=146 · 信号=利好
+""",
+        encoding="utf-8",
+    )
+
+    tags = generate_og_tags(brief, sections={}, chart_dir=None)
+
+    # User-facing prose fields lose the ``**`` markers...
+    assert "**" not in tags["og:title"]
+    assert "**" not in tags["og:description"]
+    assert "**" not in tags["twitter:title"]
+    assert "**" not in tags["twitter:description"]
+    assert "**" not in tags["article:section"]
+    # ...but the content survives.
+    assert "AI算力" in tags["og:description"]
+    # URLs / machine fields are untouched.
+    assert tags["og:url"].endswith("/briefs/2026-05-19.html")
+    assert tags["og:type"] == "article"
+    assert tags["og:locale"] == "zh_CN"
 
 
 def test_inject_og_frontmatter_serializes_adversarial_values(tmp_path: Path) -> None:

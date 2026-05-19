@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from cn_altdata_brief.adapters import (
     SuperPricingAdapter,
 )
 from cn_altdata_brief.render import (
+    _format_beijing_time,
     render_all_charts,
     render_brief_markdown,
     render_feed,
@@ -224,3 +226,95 @@ def test_render_strict_undefined_catches_missing_keys(tmp_path: Path) -> None:
                 "charts": {},
             }
         )
+
+
+# ---------------------------------------------------------------------------
+# Beijing-time formatter (H2)
+# ---------------------------------------------------------------------------
+
+
+def test_format_beijing_time_iso_z_string() -> None:
+    # UTC 08:59 → Beijing 16:59, default minute precision + suffix.
+    assert _format_beijing_time("2026-05-19T08:59:36Z") == "2026-05-19 16:59 北京时间"
+
+
+def test_format_beijing_time_naive_datetime_treated_as_utc() -> None:
+    naive = datetime(2026, 5, 19, 8, 59, 36)
+    assert _format_beijing_time(naive) == "2026-05-19 16:59 北京时间"
+
+
+def test_format_beijing_time_already_beijing_no_double_shift() -> None:
+    # ``+08:00`` value stays at its wall-clock minute — no extra +8.
+    cn = datetime(2026, 5, 19, 16, 59, 36, tzinfo=timezone(timedelta(hours=8)))
+    assert _format_beijing_time(cn) == "2026-05-19 16:59 北京时间"
+
+
+def test_format_beijing_time_with_seconds_includes_seconds() -> None:
+    out = _format_beijing_time("2026-05-19T08:59:36Z", with_seconds=True)
+    assert out == "2026-05-19 16:59:36 北京时间"
+
+
+def test_format_beijing_time_with_label_false_drops_suffix() -> None:
+    out = _format_beijing_time("2026-05-19T08:59:36Z", with_label=False)
+    assert out == "2026-05-19 16:59"
+    assert "北京时间" not in out
+
+
+# ---------------------------------------------------------------------------
+# Brief body renders Beijing-time timestamps but frontmatter stays ISO Z
+# ---------------------------------------------------------------------------
+
+
+def test_render_brief_body_uses_beijing_time_for_reader_facing_stamps(
+    super_pricing_cache: Path,
+    quant_trading_cache: Path,
+    index_research_tables: Path,
+    etf_512400_snapshot: Path,
+) -> None:
+    ctx = _build_context(
+        super_pricing_cache, quant_trading_cache, index_research_tables, etf_512400_snapshot
+    )
+    md = render_brief_markdown(context=ctx)
+    # The header line "由 cn-altdata-brief 在 ..." is now Beijing time.
+    assert "北京时间" in md
+    # The frontmatter ``generated_at:`` line keeps the ISO-Z form so
+    # RSS/Atom/OG consumers still see machine-readable timestamps.
+    assert "generated_at: 2026-05-17T00:00:00Z" in md
+
+
+# ---------------------------------------------------------------------------
+# Industry rows hide noise for empty policy data (M2)
+# ---------------------------------------------------------------------------
+
+
+def test_industry_row_with_zero_impact_and_zero_mentions_renders_no_policy_marker() -> None:
+    from cn_altdata_brief.synthesis.industry import _format_row
+
+    out = _format_row(
+        {
+            "industry": "煤炭开采加工",
+            "heat_score": 95.0,
+            "policy_signal": "neutral",
+            "policy_impact": 0.0,
+            "mentions": 0,
+        }
+    )
+    assert "无政策叠加" in out
+    assert "中性（影响=+0.000）" not in out
+    assert "提及次数=0" not in out
+
+
+def test_industry_row_with_real_policy_data_keeps_existing_format() -> None:
+    from cn_altdata_brief.synthesis.industry import _format_row
+
+    out = _format_row(
+        {
+            "industry": "新能源汽车",
+            "heat_score": 0.81,
+            "policy_signal": "bullish",
+            "policy_impact": 0.05,
+            "mentions": 3,
+        }
+    )
+    assert "政策叠加=利好（影响=+0.050）· 提及次数=3" in out
+    assert "无政策叠加" not in out
