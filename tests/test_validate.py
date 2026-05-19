@@ -63,7 +63,9 @@ def test_all_fixture_checks_pass_or_warn(all_payloads) -> None:
 def test_missing_payloads_fail() -> None:
     assert validate_mod._check_policy_industries(None).level == FAIL
     assert validate_mod._check_macro_metals(None).level == FAIL
+    assert validate_mod._check_super_pricing_provider_freshness(None).level == FAIL
     assert validate_mod._check_etf_snapshot_age(None).level == FAIL
+    assert validate_mod._check_etf_required_source_health(None).level == FAIL
     assert validate_mod._check_verdict_completeness(None).level == FAIL
 
 
@@ -102,6 +104,65 @@ def test_etf_snapshot_age_buckets() -> None:
     assert validate_mod._check_etf_snapshot_age(_etf("not-a-date")).level == WARN
 
 
+def test_provider_freshness_blocks_stale_inner_timestamps() -> None:
+    stale = (datetime.now(UTC) - timedelta(hours=48)).replace(microsecond=0).isoformat()
+    payload = _payload(
+        {
+            "policy_radar": {"timestamp": stale},
+            "macro_hf": {"timestamp": stale},
+        }
+    )
+    result = validate_mod._check_super_pricing_provider_freshness(payload)
+    assert result.level == FAIL
+    assert "stale" in result.message
+
+
+def test_provider_freshness_accepts_recent_inner_timestamps() -> None:
+    fresh = datetime.now(UTC).replace(microsecond=0).isoformat()
+    payload = _payload(
+        {
+            "policy_radar": {"timestamp": fresh},
+            "macro_hf": {"timestamp": fresh},
+        }
+    )
+    assert validate_mod._check_super_pricing_provider_freshness(payload).level == INFO
+
+
+def test_etf_required_source_health_blocks_stale_quote() -> None:
+    today = datetime.now(UTC).date()
+    payload = _payload(
+        {
+            "trade_date": (today - timedelta(days=12)).isoformat(),
+            "source_health": {
+                "required_total": 4,
+                "required_ok": 3,
+                "quote_ok": False,
+                "quote_fallback": True,
+                "required_degraded": [{"id": "quote", "fallback": True}],
+            },
+        }
+    )
+    result = validate_mod._check_etf_required_source_health(payload)
+    assert result.level == FAIL
+    assert "quote source degraded" in result.message
+
+
+def test_etf_required_source_health_accepts_fresh_quote() -> None:
+    today = datetime.now(UTC).date()
+    payload = _payload(
+        {
+            "trade_date": today.isoformat(),
+            "source_health": {
+                "required_total": 4,
+                "required_ok": 4,
+                "quote_ok": True,
+                "quote_fallback": False,
+            },
+        }
+    )
+    assert validate_mod._check_etf_required_source_health(payload).level == INFO
+
+
 # -- summarize ---------------------------------------------------------
 
 
@@ -125,31 +186,45 @@ def test_run_all_checks_against_fixtures(all_payloads, tmp_path: Path) -> None:
             "index_research": tmp_path / "missing_ix.json",
         },
     )
-    assert len(results) == 5
+    assert len(results) == 7
     assert all(r.level in (INFO, WARN, FAIL) for r in results)
     names = [r.name for r in results]
     assert "public_summary_freshness" in names
+    assert "super_pricing.provider_freshness" in names
+    assert "etf_512400.required_source_health" in names
 
 
 def test_cli_validate_human_output(
-    patched_default_paths: None, capsys: pytest.CaptureFixture[str]
+    patched_default_paths: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
+    monkeypatch.setattr(validate_mod, "PROVIDER_FRESH_HOURS", 999999)
+    monkeypatch.setattr(validate_mod, "MAX_ETF_QUOTE_AGE_DAYS", 999999)
+    monkeypatch.setattr(validate_mod, "MAX_ETF_SNAPSHOT_AGE_DAYS", 999999)
     code = main(["validate"])
     out = capsys.readouterr().out
     assert "policy_radar.industries_with_mentions" in out
     assert "macro_hf.metals_with_weekly_change" in out
+    assert "super_pricing.provider_freshness" in out
     assert "etf_512400.snapshot_age" in out
+    assert "etf_512400.required_source_health" in out
     assert "index_research.verdict_completeness" in out
     assert "public_summary_freshness" in out
     assert code in (EXIT_OK, EXIT_WARN)
 
 
 def test_cli_validate_json_output(
-    patched_default_paths: None, capsys: pytest.CaptureFixture[str]
+    patched_default_paths: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
+    monkeypatch.setattr(validate_mod, "PROVIDER_FRESH_HOURS", 999999)
+    monkeypatch.setattr(validate_mod, "MAX_ETF_QUOTE_AGE_DAYS", 999999)
+    monkeypatch.setattr(validate_mod, "MAX_ETF_SNAPSHOT_AGE_DAYS", 999999)
     code = main(["validate", "--json"])
     parsed = json.loads(capsys.readouterr().out)
-    assert len(parsed["checks"]) == 5
+    assert len(parsed["checks"]) == 7
     assert parsed["exit_code"] == code
 
 

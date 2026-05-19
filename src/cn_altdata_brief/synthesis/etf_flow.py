@@ -16,7 +16,11 @@ def synthesize_etf_flow(
         return _empty("ETF 512400 liveSnapshot.json 缺失。")
 
     snap = etf_payload.data
-    quote_line = _format_quote(snap)
+    quote_line = (
+        _format_quote(snap)
+        if _quote_source_usable(snap)
+        else _format_quote_unavailable(snap)
+    )
     nav_line = _format_nav(snap)
     health = snap.get("source_health", {}) or {}
     health_line = (
@@ -70,6 +74,30 @@ def _format_quote(snap: dict[str, Any]) -> str:
     if turnover is not None:
         parts.append(f"换手 {float(turnover) * 100:.2f}%")
     return " · ".join(parts)
+
+
+def _quote_source_usable(snap: dict[str, Any]) -> bool:
+    """Only publish current-price language when the quote source is healthy."""
+    health = snap.get("source_health", {}) or {}
+    if "quote_ok" in health or "quote_fallback" in health:
+        return bool(health.get("quote_ok")) and not bool(health.get("quote_fallback"))
+
+    sources = health.get("sources") or []
+    if isinstance(sources, list):
+        quote = next((s for s in sources if isinstance(s, dict) and s.get("id") == "quote"), None)
+        if quote is not None:
+            return bool(quote.get("ok")) and not bool(quote.get("fallback"))
+
+    return health.get("verdict") != "降级"
+
+
+def _format_quote_unavailable(snap: dict[str, Any]) -> str:
+    trade_date = snap.get("trade_date") or "未知"
+    generated_at = snap.get("generated_at") or "未知"
+    return (
+        f"**{snap.get('name', 'ETF 512400')}** ({snap.get('code', '512400')}) · "
+        f"行情源降级，当前价未采用（快照交易日={trade_date}，生成时间={generated_at}）"
+    )
 
 
 def _format_nav(snap: dict[str, Any]) -> str:

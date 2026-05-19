@@ -183,6 +183,19 @@ def _normalize_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
     required = [s for s in sources if s.get("required")]
     required_ok = sum(1 for s in required if s.get("ok"))
     fallback_count = sum(1 for s in sources if s.get("fallback"))
+    degraded_required = [
+        {
+            "id": str(s.get("id") or ""),
+            "label": str(s.get("label") or s.get("id") or ""),
+            "ok": bool(s.get("ok", False)),
+            "fallback": bool(s.get("fallback", False)),
+            "fetched_at": s.get("fetchedAt"),
+            "error": s.get("error"),
+        }
+        for s in required
+        if (not s.get("ok")) or s.get("fallback")
+    ]
+    quote_health = next((s for s in sources if s.get("id") == "quote"), {}) or {}
 
     # Last 5 trading days from navTrend (tail end is most recent).
     recent_nav = nav_trend[-5:] if nav_trend else []
@@ -219,6 +232,10 @@ def _normalize_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
             "required_ok": required_ok,
             "fallback": fallback_count,
             "verdict": _health_verdict(required_ok, len(required), fallback_count),
+            "sources": sources,
+            "required_degraded": degraded_required,
+            "quote_ok": bool(quote_health.get("ok", False)),
+            "quote_fallback": bool(quote_health.get("fallback", False)),
         },
         "commodity_drivers": {
             "ok_count": int(commodity_drivers.get("okCount", 0) or 0),

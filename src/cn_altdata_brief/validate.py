@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from cn_altdata_brief.adapters.base import (
     AdapterBase,
@@ -42,8 +43,11 @@ EXIT_FAIL = 2
 MIN_POLICY_INDUSTRIES = 3
 MIN_MACRO_METALS = 2
 MAX_ETF_SNAPSHOT_AGE_DAYS = 7
+MAX_ETF_QUOTE_AGE_DAYS = 1
+PROVIDER_FRESH_HOURS = 30
 REQUIRED_HYPOTHESIS_COUNT = 7
 PUBLIC_SUMMARY_FRESH_HOURS = 24
+LOCAL_SOURCE_TZ = ZoneInfo("Asia/Shanghai")
 
 # Public-summary sources the freshness check covers. Order is stable so the
 # emitted CheckResult.detail dict is deterministic.
@@ -98,12 +102,14 @@ def run_all_checks(
     results: list[CheckResult] = []
     results.append(_check_policy_industries(payloads.get("super_pricing")))
     results.append(_check_macro_metals(payloads.get("super_pricing")))
+    results.append(_check_super_pricing_provider_freshness(payloads.get("super_pricing")))
     results.append(
         _check_etf_snapshot_age(
             payloads.get("etf_512400"),
             missing_level=WARN if allow_missing_cache_only_sources else FAIL,
         )
     )
+    results.append(_check_etf_required_source_health(payloads.get("etf_512400")))
     results.append(_check_verdict_completeness(payloads.get("index_research")))
     results.append(_check_public_summary_freshness(public_summary_paths))
     return results
@@ -198,6 +204,71 @@ def _check_macro_metals(payload: AdapterPayload | None) -> CheckResult:
     )
 
 
+def _check_super_pricing_provider_freshness(payload: AdapterPayload | None) -> CheckResult:
+    """Fail when super-pricing's public wrapper is fresh but inner providers are stale."""
+    name = "super_pricing.provider_freshness"
+    if payload is None:
+        return CheckResult(
+            name=name,
+            level=FAIL,
+            message="super-pricing adapter returned no payload; provider freshness unknown.",
+        )
+
+    now = datetime.now(UTC)
+    threshold = timedelta(hours=PROVIDER_FRESH_HOURS)
+    checks = {
+        "policy_radar": (payload.data.get("policy_radar") or {}).get("timestamp"),
+        "macro_hf": (payload.data.get("macro_hf") or {}).get("timestamp"),
+    }
+    per_provider: dict[str, dict[str, Any]] = {}
+    stale: list[str] = []
+    missing: list[str] = []
+
+    for provider, raw_ts in checks.items():
+        ts = _parse_iso_timestamp(raw_ts)
+        entry: dict[str, Any] = {"timestamp": raw_ts}
+        if ts is None:
+            entry["age_hours"] = None
+            entry["status"] = "missing"
+            missing.append(provider)
+        else:
+            age_hours = round((now - ts).total_seconds() / 3600.0, 2)
+            entry["age_hours"] = age_hours
+            entry["max_allowed_hours"] = PROVIDER_FRESH_HOURS
+            if now - ts > threshold:
+                entry["status"] = "stale"
+                stale.append(provider)
+            else:
+                entry["status"] = "fresh"
+        per_provider[provider] = entry
+
+    detail = {
+        "freshness_window_hours": PROVIDER_FRESH_HOURS,
+        "providers": per_provider,
+    }
+    if missing or stale:
+        parts: list[str] = []
+        if stale:
+            parts.append("stale: " + ", ".join(stale))
+        if missing:
+            parts.append("missing timestamp: " + ", ".join(missing))
+        return CheckResult(
+            name=name,
+            level=FAIL,
+            message=(
+                "; ".join(parts)
+                + f" (max {PROVIDER_FRESH_HOURS}h). Refresh super-pricing providers before publishing."
+            ),
+            detail=detail,
+        )
+    return CheckResult(
+        name=name,
+        level=INFO,
+        message=f"super-pricing providers fresh within {PROVIDER_FRESH_HOURS}h.",
+        detail=detail,
+    )
+
+
 def _check_etf_snapshot_age(
     payload: AdapterPayload | None,
     *,
@@ -246,6 +317,87 @@ def _check_etf_snapshot_age(
         name=name,
         level=INFO,
         message=f"ETF snapshot fresh ({age}d old, max {MAX_ETF_SNAPSHOT_AGE_DAYS}).",
+        detail=detail,
+    )
+
+
+def _check_etf_required_source_health(payload: AdapterPayload | None) -> CheckResult:
+    """Fail when ETF quote or another required ETF source is degraded."""
+    name = "etf_512400.required_source_health"
+    if payload is None:
+        return CheckResult(
+            name=name,
+            level=FAIL,
+            message="ETF 512400 snapshot missing; required source health unknown.",
+        )
+
+    health = payload.data.get("source_health", {}) or {}
+    required_total = int(health.get("required_total", 0) or 0)
+    required_ok = int(health.get("required_ok", 0) or 0)
+    trade_date_raw = payload.data.get("trade_date")
+    trade_dt = _parse_date(trade_date_raw)
+    today = datetime.now(UTC).date()
+    quote_age_days: int | None = None
+    if trade_dt is not None:
+        quote_age_days = (today - trade_dt).days
+
+    sources = health.get("sources") or []
+    degraded_required = health.get("required_degraded") or []
+    quote_source = None
+    if isinstance(sources, list):
+        quote_source = next(
+            (s for s in sources if isinstance(s, dict) and s.get("id") == "quote"),
+            None,
+        )
+
+    quote_ok = bool(health.get("quote_ok", True))
+    quote_fallback = bool(health.get("quote_fallback", False))
+    if quote_source is not None:
+        quote_ok = bool(quote_source.get("ok"))
+        quote_fallback = bool(quote_source.get("fallback"))
+
+    issues: list[str] = []
+    if required_total and required_ok < required_total:
+        issues.append(f"required sources {required_ok}/{required_total} ok")
+    has_quote_flags = "quote_ok" in health or "quote_fallback" in health
+    if (quote_source is not None or has_quote_flags) and (not quote_ok or quote_fallback):
+        issues.append("quote source degraded")
+    quote_dt_missing = trade_dt is None
+    if quote_dt_missing:
+        issues.append(f"quote trade date unparsable ({trade_date_raw!r})")
+    elif quote_age_days is not None and quote_age_days > MAX_ETF_QUOTE_AGE_DAYS:
+        issues.append(
+            f"quote trade date stale ({quote_age_days}d > {MAX_ETF_QUOTE_AGE_DAYS}d)"
+        )
+
+    detail = {
+        "required_ok": required_ok,
+        "required_total": required_total,
+        "degraded_required": degraded_required,
+        "quote": {
+            "ok": quote_ok,
+            "fallback": quote_fallback,
+            "trade_date": trade_dt.isoformat() if trade_dt else None,
+            "raw_trade_date": trade_date_raw,
+            "age_days": quote_age_days,
+            "max_allowed_days": MAX_ETF_QUOTE_AGE_DAYS,
+            "missing_or_unparsable": quote_dt_missing,
+        },
+    }
+    if issues:
+        return CheckResult(
+            name=name,
+            level=FAIL,
+            message="; ".join(issues) + ". Refresh ETF 512400 before publishing.",
+            detail=detail,
+        )
+    return CheckResult(
+        name=name,
+        level=INFO,
+        message=(
+            f"ETF required sources healthy ({required_ok}/{required_total}); "
+            f"quote age={quote_age_days}d."
+        ),
         detail=detail,
     )
 
@@ -406,7 +558,7 @@ def _parse_iso_timestamp(raw: Any) -> datetime | None:
     except ValueError:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
+        dt = dt.replace(tzinfo=LOCAL_SOURCE_TZ)
     return dt.astimezone(UTC)
 
 
@@ -480,8 +632,10 @@ __all__ = [
     "FAIL",
     "INFO",
     "MAX_ETF_SNAPSHOT_AGE_DAYS",
+    "MAX_ETF_QUOTE_AGE_DAYS",
     "MIN_MACRO_METALS",
     "MIN_POLICY_INDUSTRIES",
+    "PROVIDER_FRESH_HOURS",
     "PUBLIC_SUMMARY_FRESH_HOURS",
     "PUBLIC_SUMMARY_SOURCES",
     "REQUIRED_HYPOTHESIS_COUNT",
@@ -491,5 +645,3 @@ __all__ = [
     "run_all_checks",
     "summarize",
 ]
-
-

@@ -1178,6 +1178,17 @@ def _cmd_publish(args: argparse.Namespace) -> int:
     """v0.6 — push the brief for ``args.date`` to the gh-pages branch."""
     date = args.date or _today_cadence_date()
 
+    if not args.dry_run:
+        validation_results = _publish_preflight_checks()
+        validation_code = summarize(validation_results)
+        if validation_code == EXIT_FAIL:
+            print("ERROR: publish blocked by data validation failures:", file=sys.stderr)
+            for result in validation_results:
+                if result.level == "fail":
+                    print(f"  - {result.name}: {result.message}", file=sys.stderr)
+            print("Run `cn-altdata-brief validate --json` for full details.", file=sys.stderr)
+            return 2
+
     publisher = GhPagesPublisher(
         brief_dir=Path(args.briefs_dir),
         chart_dir=Path(args.charts_dir),
@@ -1222,6 +1233,19 @@ def _cmd_publish(args: argparse.Namespace) -> int:
     print(f"OK · {result.message} · {push_tag} · "
           f"returned to branch={result.original_branch or 'detached'}")
     return 0
+
+
+def _publish_preflight_checks() -> list[Any]:
+    """Run the same default validation gate before mutating gh-pages."""
+    cfg = load_source_config(**source_mode_to_kwargs("auto"))
+    payloads: dict[str, AdapterPayload | None] = {}
+    for name, adapter in build_default_adapters(config=cfg).items():
+        try:
+            payloads[name] = adapter.fetch()
+        except AdapterUnavailable as exc:
+            logger.warning("publish preflight: adapter %s unavailable: %s", name, exc)
+            payloads[name] = None
+    return run_all_checks(payloads)
 
 
 def _cmd_weekly_digest(args: argparse.Namespace) -> int:

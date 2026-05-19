@@ -80,26 +80,37 @@ copy_if_exists "$IX_SRC"  "$SCRATCH/index-inclusion-research/data/public/index_r
 copy_if_exists "$QT_SRC"  "$SCRATCH/PycharmProjects/quant-trading-system/data/public/quant_summary.json"     "quant_trading"
 copy_if_exists "$ETF_SRC" "$SCRATCH/ETF 512400/src/data/liveSnapshot.json"                                    "etf_512400"
 
-# In fixture mode the committed liveSnapshot.json carries a frozen
-# tradeDate / generatedAt — those will trip the snapshot-age check on
-# any day past the fixture's commit. We rewrite them to "today" before
-# validate runs so --fail-on-warn doesn't drown out genuine issues.
+# In fixture mode the committed public summaries carry frozen timestamps —
+# those will trip freshness checks on any day past the fixture's commit. We
+# rewrite them to "today" before validate runs so fixture age doesn't drown out
+# genuine adapter issues.
 # Production mode (real upstreams) keeps the original timestamps; the
-# JS app refreshes them daily.
+# upstream apps refresh them daily.
 if [ "${SMOKE_FIXTURE:-0}" = "1" ]; then
+    SP_DEST="$SCRATCH/PycharmProjects/super-pricing-system/data/public/alt_data_summary.json"
     ETF_DEST="$SCRATCH/ETF 512400/src/data/liveSnapshot.json"
-    if [ -f "$ETF_DEST" ]; then
+    if [ -f "$SP_DEST" ] || [ -f "$ETF_DEST" ]; then
         uv run python - <<PY
 import json, datetime, pathlib
 today = datetime.date.today().isoformat()
 now_iso = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-path = pathlib.Path("${ETF_DEST}")
-doc = json.loads(path.read_text(encoding="utf-8"))
-doc.setdefault("meta", {})["generatedAt"] = now_iso
-doc.setdefault("quote", {})["tradeDate"] = today
-doc.setdefault("nav", {})["date"] = today
-path.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
-print(f"[smoke_e2e]   etf_512400: refreshed tradeDate=tradeDate={today}, generatedAt={now_iso}")
+sp_path = pathlib.Path("${SP_DEST}")
+if sp_path.exists():
+    sp_doc = json.loads(sp_path.read_text(encoding="utf-8"))
+    sp_doc["generated_at"] = now_iso
+    providers = sp_doc.setdefault("providers", {})
+    for provider_name in ("policy_radar", "macro_hf"):
+        providers.setdefault(provider_name, {})["last_refresh_at"] = now_iso
+    sp_path.write_text(json.dumps(sp_doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"[smoke_e2e]   super_pricing: refreshed provider timestamps={now_iso}")
+etf_path = pathlib.Path("${ETF_DEST}")
+if etf_path.exists():
+    doc = json.loads(etf_path.read_text(encoding="utf-8"))
+    doc.setdefault("meta", {})["generatedAt"] = now_iso
+    doc.setdefault("quote", {})["tradeDate"] = today
+    doc.setdefault("nav", {})["date"] = today
+    etf_path.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"[smoke_e2e]   etf_512400: refreshed tradeDate={today}, generatedAt={now_iso}")
 PY
     fi
 fi

@@ -512,8 +512,8 @@ def test_cli_validate_strict_runs_new_checks(
     out = capsys.readouterr().out
     parsed = json.loads(out)
     names = [c["name"] for c in parsed["checks"]]
-    # 5 freshness/structural + 6 quality = 11
-    assert len(parsed["checks"]) == 11
+    # 7 freshness/structural + 6 quality = 13
+    assert len(parsed["checks"]) == 13
     for required in (
         "content_fingerprint_freshness",
         "signal_density",
@@ -540,7 +540,7 @@ def test_cli_validate_default_skips_quality_checks(
     assert "schema_regression" not in names
     assert "placeholder_detector" not in names
     assert "temporal_coherence" not in names
-    assert len(parsed["checks"]) == 5
+    assert len(parsed["checks"]) == 7
     assert code in (EXIT_OK, EXIT_WARN, EXIT_FAIL)
 
 
@@ -559,7 +559,7 @@ def test_cli_validate_single_check_flag(
     assert "content_fingerprint_freshness" not in names
     assert "cross_source_consistency" not in names
     assert "schema_regression" not in names
-    assert len(parsed["checks"]) == 6  # 5 baseline + 1
+    assert len(parsed["checks"]) == 8  # 7 baseline + 1
     assert code in (EXIT_OK, EXIT_WARN, EXIT_FAIL)
 
 
@@ -934,7 +934,7 @@ def test_cli_check_placeholder_flag(
     assert "placeholder_detector" in names
     assert "temporal_coherence" not in names
     assert "signal_density" not in names
-    assert len(parsed["checks"]) == 6  # 5 baseline + 1
+    assert len(parsed["checks"]) == 8  # 7 baseline + 1
     assert code in (EXIT_OK, EXIT_WARN, EXIT_FAIL)
 
 
@@ -952,5 +952,5 @@ def test_cli_check_temporal_flag(
     assert "temporal_coherence" in names
     assert "placeholder_detector" not in names
     assert "signal_density" not in names
-    assert len(parsed["checks"]) == 6  # 5 baseline + 1
+    assert len(parsed["checks"]) == 8  # 7 baseline + 1
     assert code in (EXIT_OK, EXIT_WARN, EXIT_FAIL)

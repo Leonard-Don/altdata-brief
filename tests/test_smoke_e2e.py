@@ -79,15 +79,27 @@ def _seed_source_root(scratch: Path) -> dict[str, Path]:
         shutil.copyfile(src, dst)
         destinations[source_key] = dst
 
-    # The committed ETF fixture has a frozen tradeDate that would trip
-    # the snapshot-age check on any day past the fixture's commit. Same
-    # workaround as scripts/smoke_e2e.sh: refresh the dates in the copy.
+    # The committed fixtures carry frozen dates that would trip freshness
+    # checks on any day past the fixture's commit. Same workaround as
+    # scripts/smoke_e2e.sh: refresh the dates in the scratch copies.
     import json
     from datetime import UTC, datetime
+    now = datetime.now(UTC).replace(microsecond=0)
+    now_iso = now.isoformat()
+
+    sp_dst = destinations["super_pricing"]
+    sp_doc = json.loads(sp_dst.read_text(encoding="utf-8"))
+    sp_doc["generated_at"] = now_iso
+    providers = sp_doc.setdefault("providers", {})
+    for provider_name in ("policy_radar", "macro_hf"):
+        providers.setdefault(provider_name, {})["last_refresh_at"] = now_iso
+    sp_dst.write_text(
+        json.dumps(sp_doc, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
     etf_dst = destinations["etf_512400"]
     doc = json.loads(etf_dst.read_text(encoding="utf-8"))
-    today = datetime.now(UTC).date().isoformat()
-    now_iso = datetime.now(UTC).replace(microsecond=0).isoformat()
+    today = now.date().isoformat()
     doc.setdefault("meta", {})["generatedAt"] = now_iso
     doc.setdefault("quote", {})["tradeDate"] = today
     doc.setdefault("nav", {})["date"] = today
