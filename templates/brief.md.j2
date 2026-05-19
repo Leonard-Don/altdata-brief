@@ -13,10 +13,10 @@ llm_output_tokens: {{ llm.output_tokens if llm.output_tokens is not none else 'n
 {% endif %}
 ---
 
-# CN AltData Brief — {{ date }}
+# 中国另类数据日报 — {{ date }}
 
 > 由 `cn-altdata-brief` 在 {{ fetched_at }} 自动生成，合成自 4 个公开摘要/快照数据源。
-> 本简报是公开 alt-data pipeline 的展示窗口，详见 [项目说明](../README.md)。
+> 本简报是公开另类数据流程的展示窗口，详见 [项目说明](../README.md)。
 
 ---
 
@@ -38,14 +38,14 @@ llm_output_tokens: {{ llm.output_tokens if llm.output_tokens is not none else 'n
 - 数据日期：`{{ date }}`
 - 上游项目：super-pricing-system · quant-trading-system · index-inclusion-research · ETF 512400
 {% if llm.used %}
-- 合成方式：rule-based deterministic synthesis；仅「本日观察」使用本地显式开启的 LLM 改写。
-- LLM 模型：`{{ llm.model }}` · status=`{{ llm.status }}`{% if llm.latency_ms is not none %} · latency=`{{ llm.latency_ms|round(1) }}ms`{% endif %}
+- 合成方式：确定性规则合成；仅「本日观察」使用本地显式开启的大模型改写。
+- 大模型：`{{ llm.model }}` · 状态=`{{ llm.status }}` · 耗时=`{{ llm.latency_ms|round(1) if llm.latency_ms is not none else '暂无' }}ms`
 - 原始规则化版本保留在「本日观察」折叠区，可与改写版本逐句核对。
 {% elif llm.requested %}
-- 合成方式：rule-based deterministic synthesis；LLM 改写已请求但未用于正文（status=`{{ llm.status }}`）。
+- 合成方式：确定性规则合成；大模型改写已请求但未用于正文（状态=`{{ llm.status }}`）。
 - 本日观察使用原始规则化版本，避免在依赖缺失、调用失败或校验失败时发布改写文本。
 {% else %}
-- 合成方式：rule-based deterministic synthesis（默认不调用 LLM）
+- 合成方式：确定性规则合成（默认不调用大模型）
 {% endif %}
 
-> Disclaimer：本简报不构成投资建议。所有信号来自公开数据源 + 自建 alt-data pipeline，仅供研究与教学讨论。
+> 声明：本简报不构成投资建议。所有信号来自公开数据源与自建另类数据流程，仅供研究与教学讨论。

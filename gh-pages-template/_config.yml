@@ -4,10 +4,10 @@
 # `cn-altdata-brief publish`. Edit it here, NOT on the published branch
 # (which the publisher rewrites on every run).
 
-title: CN AltData Brief
+title: 中国另类数据日报
 description: >-
-  Daily, deterministic research brief over China-equity alt-data —
-  synthesized from 6 quant projects. Updated every trading day.
+  基于 4 个公开摘要/快照数据源合成的中国权益市场另类数据研究简报。
+  每个交易日更新。
 author: Leonard-Don
 lang: zh-CN
 
@@ -27,8 +27,10 @@ kramdown:
 # feed's <link> elements continue to resolve.
 include:
   - briefs
+  - digests
   - charts
   - feed.xml
+  - feed.atom
 
 # Files the publisher emits which Jekyll should not auto-process.
 exclude:
@@ -46,6 +48,11 @@ plugins:
 defaults:
   - scope:
       path: briefs
+      type: pages
+    values:
+      layout: brief
+  - scope:
+      path: digests
       type: pages
     values:
       layout: brief

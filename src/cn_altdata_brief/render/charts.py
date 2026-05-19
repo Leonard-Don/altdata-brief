@@ -62,8 +62,8 @@ def render_all_charts(
             output_dir / "policy_impact.png",
             labels=[r["industry"] for r in policy_top],
             values=[float(r["avg_impact"]) for r in policy_top],
-            title="政策动向 · top 3 行业 avg_impact",
-            xlabel="avg_impact",
+            title="政策动向 · 前三行业政策影响",
+            xlabel="政策影响均值",
         )
 
     if metals:
@@ -80,8 +80,8 @@ def render_all_charts(
             output_dir / "industry_heat.png",
             labels=[r["industry"] for r in industry_top],
             values=[float(r.get("heat_score", 0.0) or 0.0) for r in industry_top],
-            title="行业温度 · top 3 heat score",
-            xlabel="heat",
+            title="行业温度 · 前三行业热度",
+            xlabel="热度分",
             single_color=PALETTE["accent"],
         )
 

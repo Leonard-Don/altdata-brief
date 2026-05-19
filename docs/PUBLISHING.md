@@ -57,9 +57,10 @@ publish, then enable Pages.
 uv run cn-altdata-brief publish --dry-run
 ```
 
-You should see a file list including today's `briefs/<date>.md`, every
-chart PNG under `output/charts/<date>/`, `feed.xml`, `feed.atom`, and any
-weekly/monthly files under `output/digests/`. If anything is missing, run
+You should see a file list including today's `briefs/<date>.md`,
+`briefs/latest.md`, every chart PNG under `output/charts/<date>/`,
+`feed.xml`, `feed.atom`, and any weekly/monthly files under
+`output/digests/`. If anything is missing, run
 `uv run cn-altdata-brief generate` first.
 
 ---
@@ -109,6 +110,13 @@ For Actions manual publishing, the workflow first fetches
 `origin/gh-pages:gh-pages` if it exists, then calls the same CLI publisher.
 This avoids the old hand-copy template that missed newer artifacts such as
 `feed.atom`, EN siblings, weekly digests, and monthly digests.
+
+Published pages also carry a small live-refresh probe. The browser checks
+the current page every 60 seconds with cache bypassing and reloads only
+when the published HTML changes. For a monitor tab, open
+`/briefs/latest.md`: the publisher copies `output/briefs/latest.md` into
+`gh-pages`, so the tab follows the newest local/Actions publish without
+needing to know the dated filename in advance.
 
 ---
 

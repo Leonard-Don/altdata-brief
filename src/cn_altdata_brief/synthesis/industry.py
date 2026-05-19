@@ -6,6 +6,12 @@ from typing import Any
 
 from cn_altdata_brief.adapters.base import AdapterPayload
 
+SIGNAL_LABELS = {
+    "bullish": "利好",
+    "bearish": "利空",
+    "neutral": "中性",
+}
+
 
 def synthesize_industry(payload: AdapterPayload | None) -> dict[str, Any]:
     """Return template context for the 行业温度 section."""
@@ -33,12 +39,12 @@ def synthesize_industry(payload: AdapterPayload | None) -> dict[str, Any]:
 def _format_row(row: dict[str, Any]) -> str:
     industry = row.get("industry", "未知")
     heat = float(row.get("heat_score", 0.0) or 0.0)
-    signal = row.get("policy_signal", "neutral")
+    signal = SIGNAL_LABELS.get(str(row.get("policy_signal", "neutral")), "中性")
     impact = float(row.get("policy_impact", 0.0) or 0.0)
     mentions = int(row.get("mentions", 0) or 0)
     return (
-        f"**{industry}**：heat={heat:.3f} · 政策叠加 signal={signal} "
-        f"(impact={impact:+.3f}) · mentions={mentions}"
+        f"**{industry}**：热度={heat:.3f} · 政策叠加={signal}"
+        f"（影响={impact:+.3f}）· 提及次数={mentions}"
     )
 
 

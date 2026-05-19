@@ -6,7 +6,7 @@
 {% endfor %}
 
 <details>
-<summary>原始规则化版本（deterministic source text）</summary>
+<summary>原始规则化版本</summary>
 
 {% for sentence in observation.sentences %}
 > {{ sentence }}
@@ -19,6 +19,6 @@
 {% endfor %}
 {% endif %}
 
-**Sources:** {{ observation.sources|join(' · ') if observation.sources else 'n/a' }}
+**来源：** {{ observation.sources|join(' · ') if observation.sources else '暂无' }}
 
 ---

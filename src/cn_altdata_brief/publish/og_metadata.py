@@ -28,7 +28,7 @@ from typing import Any
 
 from cn_altdata_brief.render.og_image import chart_url_for, pick_og_chart
 
-SITE_NAME = "CN AltData Brief"
+SITE_NAME = "中国另类数据日报"
 DEFAULT_SITE_URL = "https://leonard-don.github.io/cn-altdata-brief"
 DEFAULT_TWITTER_HANDLE = "@cn_altdata"  # placeholder; user can override
 
@@ -46,6 +46,7 @@ _DESCRIPTION_SKIP_PREFIXES = (
     "---",
     "![",
     "**Sources:**",
+    "**来源：**",
     "{%",
     "<!--",
 )
@@ -96,7 +97,7 @@ def generate_og_tags(
     title = (
         f"{date} · {top_industry}"
         if top_industry
-        else f"{date} · CN AltData Brief"
+        else f"{date} · 中国另类数据日报"
     )
     brief_url = f"{site_url.rstrip('/')}/briefs/{date}.html"
 
@@ -116,7 +117,7 @@ def generate_og_tags(
         "twitter:description": description,
         # Article-specific (consumed by Substack-style readers).
         "article:published_time": f"{date}T09:00:00Z",
-        "article:section": top_industry or "Alt Data",
+        "article:section": top_industry or "另类数据",
     }
     if image_url:
         tags["og:image"] = image_url
@@ -220,8 +221,7 @@ def _extract_description(brief_md: str) -> str:
             text = line
         return _truncate(text, _DESCRIPTION_MAX_CHARS)
     return (
-        "Daily research brief synthesizing alt-data signals from 4 public "
-        "source adapters."
+        "基于 4 个公开摘要/快照数据源合成的中国权益市场另类数据研究简报。"
     )
 
 

@@ -236,7 +236,7 @@ def test_cli_generate_with_llm_uses_validated_polish(
     assert "llm_rephrase_used: true" in text
     assert "fake-model" in text
     assert "今日最需要留意的是" in text
-    assert "原始规则化版本（deterministic source text）" in text
+    assert "原始规则化版本" in text
     assert calls and calls[0][1]["industries"]
     assert logged == [
         ("ok", usage_log, {"date": "2026-05-17", "section": "observation"})
@@ -280,8 +280,8 @@ def test_cli_generate_with_llm_fallback_renders_raw(
     text = (tmp_path / "briefs" / "2026-05-17.md").read_text(encoding="utf-8")
     assert "llm_requested: true" in text
     assert "llm_rephrase_used: false" in text
-    assert "status=`validation_failed`" in text
-    assert "原始规则化版本（deterministic source text）" not in text
+    assert "状态=`validation_failed`" in text
+    assert "<summary>原始规则化版本" not in text
 
 
 def test_cli_validate_json_success(

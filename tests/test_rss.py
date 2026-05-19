@@ -63,7 +63,7 @@ def test_render_feed_creates_valid_rss(tmp_path: Path) -> None:
     assert root.tag == "rss"
     assert root.attrib["version"] == "2.0"
     channel = root.find("channel")
-    assert channel.findtext("title") == "CN AltData Brief"
+    assert channel.findtext("title") == "中国另类数据日报"
     assert channel.findtext("link") == "https://example.com"
 
     items = channel.findall("item")
@@ -102,7 +102,7 @@ def test_render_feed_empty_dir_emits_channel(tmp_path: Path) -> None:
         now=datetime(2026, 5, 17, tzinfo=UTC),
     )
     channel = ET.parse(feed_path).getroot().find("channel")
-    assert channel.findtext("title") == "CN AltData Brief"
+    assert channel.findtext("title") == "中国另类数据日报"
     assert channel.findall("item") == []
 
 
@@ -177,7 +177,7 @@ def test_render_feed_merges_weekly_digests(tmp_path: Path) -> None:
     titles = [i.findtext("title") or "" for i in items]
     # Daily AND weekly items must both appear.
     assert any("2026-05-15" in t for t in titles)
-    assert any("Weekly" in t for t in titles)
+    assert any("周报" in t for t in titles)
     # The digest item must carry a category=weekly-digest.
     categories = [i.findtext("category") for i in items if i.findtext("category")]
     assert "weekly-digest" in categories

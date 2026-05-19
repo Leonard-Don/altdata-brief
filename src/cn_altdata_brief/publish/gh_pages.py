@@ -86,6 +86,7 @@ class PublishPlan:
     date: str
     branch: str
     brief_source: Path
+    latest_source: Path | None
     chart_source: Path | None
     feed_source: Path | None
     atom_source: Path | None = None
@@ -215,7 +216,12 @@ class GhPagesPublisher:
             self.atom_path if (self.atom_path and self.atom_path.exists()) else None
         )
 
+        latest_path = self.brief_dir / "latest.md"
+        latest_source = latest_path if latest_path.exists() else None
+
         files_to_copy: list[Path] = [brief_path]
+        if latest_source is not None:
+            files_to_copy.append(latest_source)
         # v0.8: pick up bilingual siblings. Each supported
         # ``YYYY-MM-DD.<lang>.md`` next to the CN file is shipped
         # under the same name.
@@ -251,6 +257,7 @@ class GhPagesPublisher:
             date=date_str,
             branch=self.gh_pages_branch,
             brief_source=brief_path,
+            latest_source=latest_source,
             chart_source=chart_subdir,
             feed_source=feed_source,
             atom_source=atom_source,
@@ -617,6 +624,8 @@ class GhPagesPublisher:
             plan.brief_source,
             briefs_target_dir / plan.brief_source.name,
         )
+        if plan.latest_source is not None:
+            shutil.copy2(plan.latest_source, briefs_target_dir / "latest.md")
         for lang_md in self._collect_language_variants(plan.date):
             shutil.copy2(lang_md, briefs_target_dir / lang_md.name)
 
@@ -780,9 +789,9 @@ def _render_index_md(
     """Render the gh-pages landing page.
 
     Public format — kept stable so subscribers can scrape it. v0.8
-    splits the brief column into Chinese / English. v0.9 adds a
-    separate "本周回顾 / Weekly digests" section. v0.10 adds a chart
-    thumbnail column + RSS/Atom subscribe + share buttons. v0.11 adds
+    splits the brief column into CN / EN. v0.9 adds a separate weekly
+    digest section. v0.10 adds a chart thumbnail column + RSS/Atom
+    subscribe + share buttons. v0.11 adds
     a third table for monthly digests so the cadence trilogy
     (daily / weekly / monthly) is visible on the landing page.
     """
@@ -790,37 +799,42 @@ def _render_index_md(
     lines: list[str] = [
         "---",
         "layout: default",
-        "title: CN AltData Brief",
-        "description: Daily research brief over China-equity alt-data, synthesized from 4 public source adapters.",
+        "title: 中国另类数据日报",
+        "description: 基于 4 个公开摘要/快照数据源合成的中国权益市场另类数据研究简报。",
         "---",
         "",
-        "# CN AltData Brief — 中国另类数据日报",
+        "# 中国另类数据日报",
         "",
-        "> Daily, deterministic research brief over China-equity alt-data, ",
-        "> synthesized from 4 public source adapters. Updated every trading day at 17:00 (UTC+8).",
-        "> 中文为权威版本，English 为 LLM 翻译（保留事实，标注 source hash）。",
-        "> v0.9 起每周五 18:00 还会发布一份 **本周回顾 / Weekly digest**，聚合本周 5 份日报。",
-        "> v0.11 起每月 1 日 17:00 还会发布一份 **上月回顾 / Monthly digest**，聚合上月 ~20 份日报 + 4 份周报。",
+        "> 每个交易日 17:00（北京时间）自动生成的确定性研究简报，",
+        "> 合成自 4 个公开摘要/快照数据源。",
+        "> 中文为权威版本，英文版本为大模型翻译，保留事实并标注来源哈希。",
+        "> v0.9 起每周五 18:00 发布一份 **本周回顾**，聚合本周 5 份日报。",
+        "> v0.11 起每月 1 日 17:00 发布一份 **上月回顾**，聚合上月约 20 份日报与 4 份周报。",
         "",
-        f"_Last regenerated: {now}_",
+        f"_最后生成：{now}_",
         "",
         '<section class="subscribe-bar" markdown="0">',
-        "  <strong>订阅 / Subscribe:</strong>",
+        "  <strong>订阅：</strong>",
         '  <a class="sub-btn rss" href="feed.xml">RSS 2.0</a>',
         '  <a class="sub-btn atom" href="feed.atom">Atom 1.0</a>',
-        '  <a class="sub-btn github" href="https://github.com/Leonard-Don/cn-altdata-brief">Source</a>',
+        '  <a class="sub-btn github" href="https://github.com/Leonard-Don/cn-altdata-brief">源码</a>',
         "</section>",
         "",
         '<section class="share-bar" markdown="0">',
-        "  <strong>分享 / Share:</strong>",
+        "  <strong>分享：</strong>",
         '  <a href="https://twitter.com/intent/tweet?text=CN%20AltData%20Brief&url=https%3A%2F%2Fleonard-don.github.io%2Fcn-altdata-brief">Twitter</a>',
         '  <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fleonard-don.github.io%2Fcn-altdata-brief">LinkedIn</a>',
         '  <a href="https://t.me/share/url?url=https%3A%2F%2Fleonard-don.github.io%2Fcn-altdata-brief&text=CN%20AltData%20Brief">Telegram</a>',
         "</section>",
         "",
-        "## 简报列表 / Briefs archive",
+        f'<section class="realtime-refresh" markdown="0" data-refresh-fingerprint="{now}">',
+        "  <strong>实时刷新：</strong>",
+        '  <span data-refresh-status aria-live="polite">自动刷新检查中</span>',
+        "</section>",
         "",
-        "| 日期 / Date | 预览 / Preview | 中文 / Chinese | English |",
+        "## 简报归档",
+        "",
+        "| 日期 | 预览 | 中文 | 英文 |",
         "|---|---|---|---|",
     ]
     if not dated_briefs:
@@ -831,7 +845,7 @@ def _render_index_md(
             preview = (previews_per_date or {}).get(stem)
             if preview:
                 preview_cell = (
-                    f'<img src="charts/{stem}/{preview}" alt="{stem} preview" '
+                    f'<img src="charts/{stem}/{preview}" alt="{stem} 预览图" '
                     f'style="max-height:48px;border:1px solid #d0d7de;border-radius:3px">'
                 )
             else:
@@ -845,12 +859,12 @@ def _render_index_md(
                 f"| {stem} | {preview_cell} | {cn_cell} | {en_cell} |"
             )
     lines.append("")
-    lines.append("## 本周回顾 / Weekly digests")
+    lines.append("## 本周回顾")
     lines.append("")
-    lines.append("| 周次 / Week | 中文 / Chinese | English |")
+    lines.append("| 周次 | 中文 | 英文 |")
     lines.append("|---|---|---|")
     if not (digest_stems or []):
-        lines.append("| _(暂无 / none yet — generated every Friday 18:00)_ | — | — |")
+        lines.append("| _暂无，每周五 18:00 生成_ | — | — |")
     else:
         for stem in digest_stems or []:
             langs = (languages_per_digest or {}).get(stem, [])
@@ -861,12 +875,12 @@ def _render_index_md(
                 en_cell = "—"
             lines.append(f"| {stem} | {cn_cell} | {en_cell} |")
     lines.append("")
-    lines.append("## 上月回顾 / Monthly digests")
+    lines.append("## 上月回顾")
     lines.append("")
-    lines.append("| 月份 / Month | 中文 / Chinese | English |")
+    lines.append("| 月份 | 中文 | 英文 |")
     lines.append("|---|---|---|")
     if not (monthly_stems or []):
-        lines.append("| _(暂无 / none yet — generated on the 1st of each month at 17:00)_ | — | — |")
+        lines.append("| _暂无，每月 1 日 17:00 生成_ | — | — |")
     else:
         for stem in monthly_stems or []:
             langs = (languages_per_monthly or {}).get(stem, [])
@@ -889,11 +903,74 @@ def _render_index_md(
         "font-size: 0.85rem; }"
     )
     lines.append(".sub-btn:hover, .share-bar a:hover { background: #eaeef2; }")
+    lines.append(
+        ".realtime-refresh { display: flex; flex-wrap: wrap; gap: 0.5rem; "
+        "align-items: center; margin: 1rem 0; padding: 0.75rem; background: #eef8f6; "
+        "border: 1px solid #9ed6cd; border-radius: 6px; color: #1d4d49; }"
+    )
+    lines.append(
+        '.realtime-refresh [data-refresh-state="updating"] { color: #0969da; } '
+        '.realtime-refresh [data-refresh-state="error"] { color: #d1242f; }'
+    )
     lines.append("</style>")
+    lines.append("<script>")
+    lines.append("(function () {")
+    lines.append("  var intervalMs = 60000;")
+    lines.append('  var statusEl = document.querySelector("[data-refresh-status]");')
+    lines.append("  function signatureFor(text) {")
+    lines.append('    var marker = text.match(/data-refresh-fingerprint=["\\\']([^"\\\']+)["\\\']/i);')
+    lines.append("    if (marker) {")
+    lines.append('      return "fingerprint:" + marker[1];')
+    lines.append("    }")
+    lines.append('    return "";')
+    lines.append("  }")
+    lines.append("  function currentPageSignature() {")
+    lines.append('    var marker = document.querySelector("[data-refresh-fingerprint]");')
+    lines.append("    if (marker) {")
+    lines.append('      return "fingerprint:" + marker.getAttribute("data-refresh-fingerprint");')
+    lines.append("    }")
+    lines.append('    return "";')
+    lines.append("  }")
+    lines.append("  var currentSignature = currentPageSignature();")
+    lines.append("  function setStatus(text, state) {")
+    lines.append("    if (!statusEl) { return; }")
+    lines.append("    statusEl.textContent = text;")
+    lines.append("    if (state) {")
+    lines.append('      statusEl.setAttribute("data-refresh-state", state);')
+    lines.append("    } else {")
+    lines.append('      statusEl.removeAttribute("data-refresh-state");')
+    lines.append("    }")
+    lines.append("  }")
+    lines.append("  async function checkForUpdates() {")
+    lines.append("    try {")
+    lines.append("      var probe = new URL(window.location.href);")
+    lines.append('      probe.searchParams.set("_refresh_probe", String(Date.now()));')
+    lines.append("      var response = await fetch(probe.toString(), {")
+    lines.append('        cache: "no-store",')
+    lines.append('        headers: { "Cache-Control": "no-cache" }')
+    lines.append("      });")
+    lines.append('      if (!response.ok) { throw new Error("HTTP " + response.status); }')
+    lines.append("      var nextSignature = signatureFor(await response.text());")
+    lines.append("      if (nextSignature && currentSignature && nextSignature !== currentSignature) {")
+    lines.append('        setStatus("检测到更新，正在刷新", "updating");')
+    lines.append("        window.location.reload();")
+    lines.append("        return;")
+    lines.append("      }")
+    lines.append(
+        '      setStatus("自动刷新 · " + new Date().toLocaleTimeString("zh-CN", { hour12: false }), "");'
+    )
+    lines.append("    } catch (error) {")
+    lines.append('      setStatus("自动刷新暂不可用", "error");')
+    lines.append("    }")
+    lines.append("  }")
+    lines.append("  checkForUpdates();")
+    lines.append("  window.setInterval(checkForUpdates, intervalMs);")
+    lines.append("})();")
+    lines.append("</script>")
     lines.append("")
     lines.append("---")
     lines.append("")
-    lines.append("Generated by [`cn-altdata-brief`](https://github.com/Leonard-Don/cn-altdata-brief) · MIT")
+    lines.append("由 [`cn-altdata-brief`](https://github.com/Leonard-Don/cn-altdata-brief) 生成 · MIT")
     lines.append("")
     return "\n".join(lines)
 

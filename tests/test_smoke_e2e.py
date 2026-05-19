@@ -253,8 +253,8 @@ def test_public_summary_generate_keeps_llm_disabled_by_default(
     assert "llm_rephrase_used: false" in text
     assert "llm_status: disabled" in text
     assert "llm_model: null" in text
-    assert "默认不调用 LLM" in text
-    assert "原始规则化版本（deterministic source text）" not in text
+    assert "默认不调用大模型" in text
+    assert "<summary>原始规则化版本" not in text
     assert str(scratch) not in text
     assert "/Users/leonardodon" not in text
 
@@ -301,8 +301,8 @@ def test_public_summary_generate_with_unavailable_llm_falls_back_to_raw(
     assert "llm_requested: true" in text
     assert "llm_rephrase_used: false" in text
     assert "llm_status: sdk_missing" in text
-    assert "LLM 改写已请求但未用于正文" in text
-    assert "原始规则化版本（deterministic source text）" not in text
+    assert "大模型改写已请求但未用于正文" in text
+    assert "<summary>原始规则化版本" not in text
     assert str(scratch) not in text
     assert "/Users/leonardodon" not in text
 

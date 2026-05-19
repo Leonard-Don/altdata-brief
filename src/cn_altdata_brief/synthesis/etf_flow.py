@@ -20,12 +20,12 @@ def synthesize_etf_flow(
     nav_line = _format_nav(snap)
     health = snap.get("source_health", {}) or {}
     health_line = (
-        f"数据源 {health.get('required_ok', 0)}/{health.get('required_total', 0)} required OK · "
-        f"fallback={health.get('fallback', 0)} · 评级={health.get('verdict', '未知')}"
+        f"必需数据源 {health.get('required_ok', 0)}/{health.get('required_total', 0)} 正常 · "
+        f"兜底次数={health.get('fallback', 0)} · 评级={health.get('verdict', '未知')}"
     )
     drivers = snap.get("commodity_drivers", {}) or {}
     driver_line = (
-        f"商品驱动子源 {drivers.get('ok_count', 0)}/{drivers.get('total', 0)} OK"
+        f"商品驱动子源 {drivers.get('ok_count', 0)}/{drivers.get('total', 0)} 正常"
         if drivers.get("total")
         else None
     )
@@ -77,7 +77,7 @@ def _format_nav(snap: dict[str, Any]) -> str:
     date = nav.get("date", "—")
     unit = nav.get("unit")
     daily = nav.get("daily_return")
-    parts = [f"NAV ({date})"]
+    parts = [f"净值（{date}）"]
     if unit is not None:
         parts.append(f"单位净值 {unit:.4f}")
     if daily is not None:
