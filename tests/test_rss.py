@@ -184,3 +184,84 @@ def test_render_feed_merges_weekly_digests(tmp_path: Path) -> None:
     # GUID shape: ``cn-altdata-brief:digest:<stem>``.
     guids = [i.findtext("guid") or "" for i in items]
     assert any("cn-altdata-brief:digest:2026-W20" in g for g in guids)
+
+
+# ---------------------------------------------------------------------------
+# Markdown-emphasis strip regression — RSS / Atom feed readers render the
+# ``<description>`` and ``<summary>`` text verbatim. Leaving the raw
+# ``**bold**`` markers in means feed clients literally show the asterisks
+# in the preview pane. The fix routes ``_extract_first_paragraph`` output
+# through :func:`og_metadata._strip_md_emphasis` so feed-facing prose
+# stays clean.
+# ---------------------------------------------------------------------------
+
+
+def test_extract_first_paragraph_strips_markdown_emphasis() -> None:
+    """Unit-level: emphasis markers are stripped from feed prose."""
+    bold = "- **AI算力**: 政策影响=+1.000"
+    inline = "- 今日核心信号是 *煤炭开采加工* 与 `super-pricing`"
+    assert _extract_first_paragraph(bold) == "AI算力: 政策影响=+1.000"
+    assert _extract_first_paragraph(inline) == (
+        "今日核心信号是 煤炭开采加工 与 super-pricing"
+    )
+
+
+def test_render_feed_descriptions_have_no_markdown_emphasis_markers(
+    tmp_path: Path,
+) -> None:
+    """RSS feed.xml: no ``<description>`` text contains ``**`` markers."""
+    briefs = tmp_path / "briefs"
+    briefs.mkdir()
+    (briefs / "2026-05-17.md").write_text(SAMPLE_BRIEF, encoding="utf-8")
+    (briefs / "2026-05-16.md").write_text(
+        SAMPLE_BRIEF.replace("2026-05-17", "2026-05-16"), encoding="utf-8"
+    )
+    digests = tmp_path / "digests"
+    digests.mkdir()
+    (digests / "2026-W20.md").write_text(
+        "# 本周回顾 W20 — 2026-05-11 → 2026-05-15\n\n"
+        "- **新能源汽车**: weekly takeaway with __underscore_bold__ too\n",
+        encoding="utf-8",
+    )
+
+    feed_path = tmp_path / "feed.xml"
+    render_feed(
+        briefs_dir=briefs,
+        feed_path=feed_path,
+        digests_dir=digests,
+        site_url="https://example.com",
+    )
+    root = ET.parse(feed_path).getroot()
+    for desc in root.findall("channel/item/description"):
+        text = desc.text or ""
+        assert "**" not in text, f"feed.xml description still contains **: {text!r}"
+        assert "__" not in text, f"feed.xml description still contains __: {text!r}"
+
+
+def test_render_atom_feed_summary_and_content_have_no_emphasis_markers(
+    tmp_path: Path,
+) -> None:
+    """Atom feed.atom: no <summary> or <content> text contains ``**``."""
+    from cn_altdata_brief.render.rss import render_atom_feed
+
+    briefs = tmp_path / "briefs"
+    briefs.mkdir()
+    (briefs / "2026-05-17.md").write_text(SAMPLE_BRIEF, encoding="utf-8")
+    atom_path = tmp_path / "feed.atom"
+    render_atom_feed(
+        briefs_dir=briefs,
+        feed_path=atom_path,
+        site_url="https://example.com",
+    )
+    raw = atom_path.read_text(encoding="utf-8")
+    ns = "{http://www.w3.org/2005/Atom}"
+    root = ET.parse(atom_path).getroot()
+    for entry in root.findall(f"{ns}entry"):
+        summary = (entry.findtext(f"{ns}summary") or "")
+        # Atom <content> for our briefs is HTML-wrapped via CDATA; parse
+        # the on-disk text to see the CDATA payload directly.
+        assert "**" not in summary, f"atom <summary> still has **: {summary!r}"
+    # The CDATA body in raw XML must not contain literal ``**`` either.
+    assert "<![CDATA[<p>**" not in raw
+    # Even with underscore-bold input the marker must not leak.
+    assert "__新能源" not in raw

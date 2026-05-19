@@ -12,7 +12,7 @@ reversal_events_count: {{ reversal_events|length }}
 
 # 上月回顾 {{ month_label }} — {{ month_start }} → {{ month_end }}
 
-> 由 `cn-altdata-brief` 在 {{ fetched_at }} 自动生成，聚合本月 {{ brief_count }} 份每日简报 + {{ digest_count }} 份周度回顾。
+> 由 `cn-altdata-brief` 在 {{ beijing_time(fetched_at) }} 自动生成，聚合本月 {{ brief_count }} 份每日简报 + {{ digest_count }} 份周度回顾。
 > 本文件为月度回顾（确定性规则合成），不包含大模型改写；`--with-llm` 仅用来产出英文版本。
 
 ---

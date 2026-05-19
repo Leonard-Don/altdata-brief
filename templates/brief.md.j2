@@ -30,8 +30,6 @@ llm_output_tokens: {{ llm.output_tokens if llm.output_tokens is not none else 'n
 
 {% include 'partials/observation.md.j2' %}
 
----
-
 ## 元信息
 
 - 生成时间：`{{ beijing_time(fetched_at) }}`

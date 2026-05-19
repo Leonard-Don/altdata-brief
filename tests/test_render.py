@@ -318,3 +318,201 @@ def test_industry_row_with_real_policy_data_keeps_existing_format() -> None:
     )
     assert "政策叠加=利好（影响=+0.050）· 提及次数=3" in out
     assert "无政策叠加" not in out
+
+
+# ---------------------------------------------------------------------------
+# Setext H2 regression — ``**来源：**`` lines must not collapse into a
+# heading by being placed immediately above a ``---`` underline. The
+# brief template's policy + inventory partials end with an ``{% endif %}``
+# that, under ``trim_blocks=True``, used to swallow the blank line and
+# turn the next ``---`` into a CommonMark/GFM setext H2 underline.
+# ---------------------------------------------------------------------------
+
+
+def _minimal_brief_context() -> dict:
+    """Smallest context the brief template accepts under StrictUndefined."""
+    return {
+        "date": "2026-05-17",
+        "fetched_at": "2026-05-17T00:00:00Z",
+        "policy": {
+            "title": "政策动向",
+            "bullets": ["**AI算力**: +1.0"],
+            "sources": ["src::policy.json"],
+            "policy_count": 1,
+            "confidence": None,
+            "timestamp": "2026-05-20T00:58:00Z",
+            "top_industries": [],
+        },
+        "inventory": {
+            "title": "库存信号",
+            "bullets": ["x"],
+            "sources": ["src::macro.json"],
+            "metals": [],
+            "ports": None,
+            "port_line": None,
+            "timestamp": "2026-05-19T23:59:00Z",
+        },
+        "etf_flow": {
+            "title": "ETF 资金流",
+            "bullets": ["x"],
+            "sources": ["x"],
+            "quote": {},
+            "adjacent": [],
+        },
+        "industry": {
+            "title": "行业温度",
+            "bullets": ["x"],
+            "sources": ["x"],
+            "top_industries": [],
+        },
+        "observation": {
+            "title": "本日观察",
+            "sentences": ["今日核心信号"],
+            "sources": ["x"],
+        },
+        "charts": {},
+    }
+
+
+def _has_blank_line_between(md: str, anchor: str, separator: str = "---") -> bool:
+    """Return True when the line containing ``anchor`` is followed by a
+    blank line before the next ``separator`` line.
+
+    Setext H2 in CommonMark/GFM requires the underline (``---``) to be
+    on the line immediately after a non-blank text line — inserting one
+    blank line forces the parser to emit a paragraph + ``<hr>`` instead.
+    """
+    lines = md.splitlines()
+    for i, line in enumerate(lines):
+        if anchor in line:
+            # Walk forward looking for the next non-empty content line.
+            saw_blank = False
+            for follower in lines[i + 1:]:
+                if follower == "":
+                    saw_blank = True
+                    continue
+                # First non-blank line after the anchor.
+                return saw_blank and follower.strip() == separator
+    return False
+
+
+def test_policy_partial_keeps_blank_line_before_separator_so_no_setext_h2(
+    super_pricing_cache: Path,
+    quant_trading_cache: Path,
+    index_research_tables: Path,
+    etf_512400_snapshot: Path,
+) -> None:
+    """Regression: the policy partial's ``**来源：**`` line had ``---``
+    on the very next line, which CommonMark/GFM renders as ``<h2>来源
+    ：</h2>``. Verify there is at least one blank line between the
+    source line and the section separator.
+    """
+    ctx = _build_context(
+        super_pricing_cache,
+        quant_trading_cache,
+        index_research_tables,
+        etf_512400_snapshot,
+    )
+    md = render_brief_markdown(context=ctx)
+    # Find the policy section (## 1.) and check its 来源 line.
+    section_start = md.find("## 1.")
+    section_end = md.find("## 2.")
+    assert section_start >= 0 and section_end > section_start
+    policy_section = md[section_start:section_end]
+    assert "**来源：**" in policy_section
+    assert _has_blank_line_between(policy_section, "**来源：**", "---"), (
+        "policy partial regressed: **来源：** must be followed by a blank "
+        "line before the ``---`` separator, otherwise CommonMark/GFM "
+        "renders it as a setext H2 underline."
+    )
+
+
+def test_inventory_partial_keeps_blank_line_before_separator_so_no_setext_h2(
+    super_pricing_cache: Path,
+    quant_trading_cache: Path,
+    index_research_tables: Path,
+    etf_512400_snapshot: Path,
+) -> None:
+    """Same regression as the policy partial, applied to inventory."""
+    ctx = _build_context(
+        super_pricing_cache,
+        quant_trading_cache,
+        index_research_tables,
+        etf_512400_snapshot,
+    )
+    md = render_brief_markdown(context=ctx)
+    section_start = md.find("## 2.")
+    section_end = md.find("## 3.")
+    assert section_start >= 0 and section_end > section_start
+    inventory_section = md[section_start:section_end]
+    assert "**来源：**" in inventory_section
+    assert _has_blank_line_between(inventory_section, "**来源：**", "---"), (
+        "inventory partial regressed: **来源：** must be followed by a "
+        "blank line before the ``---`` separator (setext H2 trap)."
+    )
+
+
+def test_brief_template_does_not_emit_stacked_separators_before_metainfo(
+    super_pricing_cache: Path,
+    quant_trading_cache: Path,
+    index_research_tables: Path,
+    etf_512400_snapshot: Path,
+) -> None:
+    """Regression: brief.md.j2 used to add an explicit ``---`` after the
+    observation partial — which itself ends with ``---``. Two consecutive
+    ``---`` lines turn the first into ``<h2>---</h2>``. Verify only one
+    separator precedes ``## 元信息``.
+    """
+    ctx = _build_context(
+        super_pricing_cache,
+        quant_trading_cache,
+        index_research_tables,
+        etf_512400_snapshot,
+    )
+    md = render_brief_markdown(context=ctx)
+    metainfo_idx = md.find("## 元信息")
+    assert metainfo_idx > 0
+    # Walk backwards from ## 元信息 collecting separator-only lines.
+    upstream = md[:metainfo_idx].rstrip("\n").splitlines()
+    # Skip trailing blank lines.
+    trailing = []
+    for line in reversed(upstream):
+        if line == "":
+            continue
+        trailing.append(line)
+        if line.strip() != "---":
+            break
+    sep_count = sum(1 for line in trailing if line.strip() == "---")
+    assert sep_count == 1, (
+        f"brief.md.j2 regressed: expected exactly one ``---`` separator "
+        f"directly above ## 元信息, found {sep_count} (would render as "
+        f"<h2>---</h2>)."
+    )
+
+
+def test_brief_md_renders_source_line_as_paragraph_not_heading() -> None:
+    """End-to-end markdown -> HTML check (Python ``markdown`` lib): the
+    fixed brief must render every ``**来源：**`` line as ``<p>`` (with a
+    ``<strong>`` child), never as ``<h2>``. Skipped when ``markdown`` is
+    not installed (it isn't pinned in ``pyproject``).
+    """
+    import importlib
+
+    try:
+        md_lib = importlib.import_module("markdown")
+    except ImportError:  # pragma: no cover — env-dependent
+        import pytest
+
+        pytest.skip("python-markdown not installed in this environment")
+
+    from cn_altdata_brief.render.markdown import render_brief_markdown
+
+    md = render_brief_markdown(context=_minimal_brief_context())
+    html = md_lib.markdown(md, extensions=["extra"])
+    # Every 来源 line must be a paragraph, never a heading.
+    assert "<h2><strong>来源" not in html
+    assert "<h2>**来源" not in html
+    # And we should still find the source line as a <p>.
+    assert "<p><strong>来源" in html
+    # No stacked-``---`` artifact above 元信息.
+    assert "<h2>---</h2>" not in html

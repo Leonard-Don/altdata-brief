@@ -355,6 +355,33 @@ def test_render_template_contains_expected_sections(week_dir: Path) -> None:
     assert "[2026-05-11.md](../briefs/2026-05-11.md)" in md
 
 
+def test_render_template_body_uses_beijing_time_for_generated_at(
+    week_dir: Path,
+) -> None:
+    """Regression: ``render/digest.py`` did not register ``beijing_time``,
+    so the weekly template's body header rendered the raw ISO Z string
+    instead of Beijing wall-clock time. The frontmatter ``generated_at:``
+    field stays raw ISO (machine readers parse it).
+    """
+    paths = sorted(week_dir.glob("*.md"))
+    digest = compose_weekly_digest(paths, anchor=date(2026, 5, 14))
+    ctx = digest.render_context()
+    # Pin a known ISO Z so we can assert the Beijing conversion exactly.
+    ctx["fetched_at"] = "2026-05-15T08:59:36Z"
+    md = render_weekly_digest_markdown(context=ctx)
+    # Body header line must show the formatted Beijing time, not raw ISO.
+    assert "2026-05-15 16:59 北京时间" in md
+    # And the ISO Z must be absent from the body header line — only the
+    # frontmatter ``generated_at:`` key may carry it.
+    body_idx = md.find("# 本周回顾")
+    assert body_idx > 0
+    body = md[body_idx:]
+    assert "2026-05-15T08:59:36Z" not in body
+    # Frontmatter still has the raw ISO (RSS / Atom consumers need it).
+    frontmatter = md[:body_idx]
+    assert "generated_at: 2026-05-15T08:59:36Z" in frontmatter
+
+
 def test_render_template_forecast_flags_persistent_themes(week_dir: Path) -> None:
     paths = sorted(week_dir.glob("*.md"))
     digest = compose_weekly_digest(paths, anchor=date(2026, 5, 14))
