@@ -290,15 +290,19 @@ def test_cli_validate_json_success(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(validate_mod, "MAX_ETF_SNAPSHOT_AGE_DAYS", 9999)
+    monkeypatch.setattr(validate_mod, "MAX_ETF_QUOTE_AGE_DAYS", 9999)
+    monkeypatch.setattr(validate_mod, "PROVIDER_FRESH_HOURS", 999999)
     code = main(["validate", "--json"])
     # WARN is acceptable here — the maintainer's local super-pricing repo
     # may or may not have a public summary fresh inside the 24h window.
     assert code in (0, 1)
     payload = json.loads(capsys.readouterr().out)
     assert payload["exit_code"] == code
-    assert len(payload["checks"]) == 5
+    assert len(payload["checks"]) == 7
     names = [c["name"] for c in payload["checks"]]
     assert "public_summary_freshness" in names
+    assert "super_pricing.provider_freshness" in names
+    assert "etf_512400.required_source_health" in names
 
 
 def test_cli_publish_passes_default_atom_path(
@@ -414,6 +418,45 @@ def test_cli_publish_passes_explicit_atom_path(
     assert captured["atom_path"] == atom_path
     assert captured["feed_path"] == tmp_path / "feed.xml"
     assert captured["publish_date"] == "2026-05-17"
+
+
+def test_cli_publish_blocks_real_publish_on_validation_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli_mod,
+        "_publish_preflight_checks",
+        lambda: [validate_mod.CheckResult("etf_512400.required_source_health", "fail", "quote stale")],
+    )
+
+    class UnexpectedPublisher:
+        def __init__(self, **kwargs) -> None:
+            raise AssertionError("publisher should not be constructed after validation failure")
+
+    monkeypatch.setattr(cli_mod, "GhPagesPublisher", UnexpectedPublisher)
+    code = main(
+        [
+            "publish",
+            "--date",
+            "2026-05-17",
+            "--briefs-dir",
+            str(tmp_path / "briefs"),
+            "--charts-dir",
+            str(tmp_path / "charts"),
+            "--feed-path",
+            str(tmp_path / "feed.xml"),
+            "--repo-root",
+            str(tmp_path / "repo"),
+            "--template-dir",
+            str(tmp_path / "template"),
+            "--no-push",
+        ]
+    )
+
+    assert code == 2
+    assert "publish blocked" in capsys.readouterr().err
 
 
 def test_cli_help_works(capsys: pytest.CaptureFixture[str]) -> None:

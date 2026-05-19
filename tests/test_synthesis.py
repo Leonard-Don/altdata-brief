@@ -10,6 +10,7 @@ from cn_altdata_brief.adapters import (
     QuantTradingAdapter,
     SuperPricingAdapter,
 )
+from cn_altdata_brief.adapters.base import AdapterPayload
 from cn_altdata_brief.synthesis import (
     synthesize_etf_flow,
     synthesize_industry,
@@ -84,6 +85,36 @@ def test_etf_flow_handles_missing_quant(etf_512400_snapshot: Path) -> None:
     result = synthesize_etf_flow(etf_payload, None)
     assert result["available"] is True
     assert result["adjacent"] == []
+
+
+def test_etf_flow_hides_degraded_quote_price() -> None:
+    payload = AdapterPayload(
+        source="ETF-512400",
+        fetched_at="2026-05-19T00:00:00Z",
+        cache_path=None,
+        live=False,
+        data={
+            "name": "有色金属ETF南方",
+            "code": "512400",
+            "trade_date": "2026-05-07",
+            "generated_at": "2026-05-19T08:54:01Z",
+            "price": 2.207,
+            "change_percent": 0.0036,
+            "nav": {"date": "2026-05-18", "unit": 2.0081, "daily_return": -0.0155},
+            "source_health": {
+                "required_total": 4,
+                "required_ok": 3,
+                "fallback": 1,
+                "verdict": "降级",
+                "quote_ok": False,
+                "quote_fallback": True,
+            },
+            "commodity_drivers": {},
+        },
+    )
+    result = synthesize_etf_flow(payload, None)
+    assert "行情源降级" in result["bullets"][0]
+    assert "现价 2.207" not in " ".join(result["bullets"])
 
 
 # ---- industry -------------------------------------------------------------

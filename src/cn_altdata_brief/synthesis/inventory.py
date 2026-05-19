@@ -61,9 +61,9 @@ def _format_metal(m: dict[str, Any]) -> str:
 
 def _tag_for(change: float, trend: str) -> str:
     """Boring rule: |change| ≤ 0.5% → 持稳；change < 0 → 去库; change > 0 → 累库."""
-    if trend in {"下行", "下降"}:
+    if trend in {"下行", "下降", "去库"}:
         return "去库"
-    if trend in {"上行", "上升"}:
+    if trend in {"上行", "上升", "累库"}:
         return "累库"
     if abs(change) <= 0.5:
         return "持稳"
@@ -76,6 +76,8 @@ def _trend_label(trend: str) -> str:
         "down": "下行",
         "rising": "上行",
         "up": "上行",
+        "restocking": "累库",
+        "destocking": "去库",
         "stable": "稳定",
     }.get(trend, trend or "未知")
 

@@ -13,7 +13,7 @@
     },
     "source_health": {
       "required": ["total", "ok", "verdict"],
-      "optional": ["required_total", "required_ok", "fallback"]
+      "optional": ["required_total", "required_ok", "fallback", "sources", "required_degraded", "quote_ok", "quote_fallback"]
     }
   }
 }
