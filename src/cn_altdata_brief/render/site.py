@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from pathlib import Path
 
 INDEX_HEADER = """# CN AltData Brief — 历史归档
@@ -43,7 +44,11 @@ def render_site_index(
     target = output_path or (briefs_dir / "index.md")
 
     briefs = sorted(
-        (p for p in briefs_dir.glob("*.md") if p.name != "index.md"),
+        (
+            p
+            for p in briefs_dir.glob("*.md")
+            if _looks_like_daily_brief_filename(p.stem)
+        ),
         reverse=True,
     )
     lines = [INDEX_HEADER]
@@ -81,3 +86,11 @@ def _looks_like_digest_filename(stem: str) -> bool:
     """``2026-W20`` is a digest; ``2026-W20.en`` is its EN sibling."""
     base = stem.split(".", 1)[0]
     return bool(_DIGEST_STEM_RE.fullmatch(base))
+
+
+def _looks_like_daily_brief_filename(stem: str) -> bool:
+    """Return True only for canonical daily brief stems: ``YYYY-MM-DD``."""
+    try:
+        return date.fromisoformat(stem).isoformat() == stem
+    except ValueError:
+        return False
