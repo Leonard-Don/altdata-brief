@@ -859,6 +859,13 @@ REQUIRED_UPSTREAM_SCALAR_PATHS: dict[str, tuple[str, ...]] = {
     "quant_trading": ("providers.policy_radar.policy_count",),
 }
 
+#: Scalar upstream paths that must be accepted by the adapter's ``int()``
+#: normalization, rather than merely being non-container placeholders.
+REQUIRED_UPSTREAM_INT_SCALAR_PATHS: dict[str, tuple[str, ...]] = {
+    "super_pricing": ("providers.policy_radar.policy_count",),
+    "quant_trading": ("providers.policy_radar.policy_count",),
+}
+
 #: "any-of" path groups: at least ONE path in the tuple must resolve.
 #: Used where the adapter has a documented fallback chain (quant-trading's
 #: heat ranking can come from either provider block).
@@ -913,6 +920,17 @@ def _path_has_valid_type(value: Any, *, require_container: bool) -> bool:
     if require_container:
         return isinstance(value, (dict, list))
     return not isinstance(value, (dict, list))
+
+
+def _path_is_int_coercible_scalar(value: Any) -> bool:
+    """True when a scalar required path can pass the adapter's int() cast."""
+    if isinstance(value, bool):
+        return False
+    try:
+        int(value)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return True
 
 
 def _raw_summary_path_for(
@@ -992,12 +1010,22 @@ def check_required_paths(
         source_missing: list[str] = []
         invalid_type_paths: dict[str, str] = {}
         scalar_paths = set(REQUIRED_UPSTREAM_SCALAR_PATHS.get(source_key, ()))
+        int_scalar_paths = set(
+            REQUIRED_UPSTREAM_INT_SCALAR_PATHS.get(source_key, ())
+        )
         for dotted in required:
             value = _resolve_nested_path(doc, dotted)
             require_container = dotted not in scalar_paths
             if not _path_has_valid_type(value, require_container=require_container):
                 if value is not _MISSING and value is not None:
                     invalid_type_paths[dotted] = type(value).__name__
+                source_missing.append(dotted)
+                continue
+            if (
+                dotted in int_scalar_paths
+                and not _path_is_int_coercible_scalar(value)
+            ):
+                invalid_type_paths[dotted] = type(value).__name__
                 source_missing.append(dotted)
                 continue
             if not _path_is_populated(value):
