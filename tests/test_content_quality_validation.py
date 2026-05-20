@@ -516,6 +516,40 @@ def test_required_paths_warns_when_explicit_summary_path_is_missing(
     assert entry["path"] == str(missing_summary)
 
 
+def test_required_paths_fail_message_keeps_unreadable_summary_context(
+    tmp_path: Path,
+) -> None:
+    """Combined FAILs should still name unreadable summary artifacts."""
+    bad_super_pricing = _write_summary(
+        tmp_path / "sp.json",
+        {
+            "schema_version": 1,
+            "providers": {
+                "policy_radar": {
+                    "industry_signals": {"电网": {"signal": "bullish"}},
+                    "policy_count": 1,
+                },
+                "macro_hf": {},
+            },
+        },
+    )
+    missing_quant = tmp_path / "missing_quant.json"
+
+    r = vq.check_required_paths(
+        {},
+        summary_paths={
+            "super_pricing": bad_super_pricing,
+            "quant_trading": missing_quant,
+        },
+    )
+
+    assert r.level == FAIL
+    assert "providers.macro_hf.metals" in r.message
+    assert "quant_trading: unreadable summary" in r.message
+    assert r.detail is not None
+    assert r.detail["per_source"]["quant_trading"]["status"] == "parse_error"
+
+
 # ---------------------------------------------------------------------------
 # 6. All-pass case across all strict checks
 # ---------------------------------------------------------------------------

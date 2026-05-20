@@ -1006,6 +1006,11 @@ def check_required_paths(
     }
 
     if missing_report:
+        warning_suffix = (
+            f" Also unreadable summaries: {'; '.join(parse_warnings)}."
+            if parse_warnings
+            else ""
+        )
         return CheckResult(
             name=name,
             level=FAIL,
@@ -1013,6 +1018,7 @@ def check_required_paths(
                 "; ".join(missing_report)
                 + ". Upstream schema drifted — the adapter would silently "
                 "substitute zeros for these paths."
+                + warning_suffix
             ),
             detail=detail,
         )
