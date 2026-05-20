@@ -472,6 +472,31 @@ def test_required_paths_audits_explicit_payload_public_summary(tmp_path: Path) -
     assert "providers.macro_hf.metals" in missing
 
 
+def test_required_paths_warns_when_payload_stamped_summary_path_is_missing(
+    tmp_path: Path,
+) -> None:
+    """A disappeared public summary consumed by the adapter must not be silently skipped."""
+    missing_summary = tmp_path / "missing_public_summary.json"
+    payloads = {
+        "super_pricing": _payload(
+            "super_pricing",
+            {
+                "source_mode": "public",
+                "public_summary_path": str(missing_summary),
+            },
+        )
+    }
+
+    r = vq.check_required_paths(payloads)
+
+    assert r.level == WARN
+    assert "unreadable summary" in r.message
+    assert r.detail is not None
+    entry = r.detail["per_source"]["super_pricing"]
+    assert entry["status"] == "parse_error"
+    assert entry["path"] == str(missing_summary)
+
+
 def test_required_paths_warns_when_explicit_summary_path_is_missing(
     tmp_path: Path,
 ) -> None:

@@ -905,17 +905,15 @@ def _raw_summary_path_for(
 
     Prefers the ``public_summary_path`` the adapter stamped on its payload
     so the check reads the *exact* file the adapter consumed. Returns
-    ``None`` when the payload did not come from an explicit public summary
-    or the stamped file is unavailable — the check then skips that source
-    (INFO), since there is no source-local upstream artifact to audit (e.g.
-    the adapter ran in cache mode).
+    ``None`` when the payload did not come from an explicit public summary.
+    A stamped path is returned even if it no longer exists, so the caller can
+    surface the disappeared audit artifact as WARN instead of silently
+    skipping it.
     """
     if payload is not None:
         stamped = payload.data.get("public_summary_path")
         if isinstance(stamped, str) and stamped:
-            p = Path(stamped)
-            if p.exists():
-                return p
+            return Path(stamped)
     return None
 
 
