@@ -370,6 +370,32 @@ def test_required_paths_missing_nested_source_fails_with_path(tmp_path: Path) ->
     assert "providers.macro_hf.metals" in missing
 
 
+def test_required_paths_wrong_type_container_fails_with_path(tmp_path: Path) -> None:
+    """A required upstream container present as a scalar is still unusable."""
+    summary = _write_summary(
+        tmp_path / "sp.json",
+        {
+            "schema_version": 1,
+            "providers": {
+                "policy_radar": {
+                    "industry_signals": {"电网": {"signal": "bullish"}},
+                    "policy_count": 1,
+                },
+                "macro_hf": {"metals": "unavailable"},
+            },
+        },
+    )
+
+    r = vq.check_required_paths({}, summary_paths={"super_pricing": summary})
+
+    assert r.level == FAIL
+    assert "providers.macro_hf.metals" in r.message
+    assert r.detail is not None
+    entry = r.detail["per_source"]["super_pricing"]
+    assert "providers.macro_hf.metals" in entry["missing_paths"]
+    assert entry["invalid_type_paths"]["providers.macro_hf.metals"] == "str"
+
+
 def test_required_paths_quant_accepts_documented_heat_fallback(tmp_path: Path) -> None:
     """Quant can source heat from policy_radar.industry_signals when industry_heat is absent."""
     summary = _write_summary(

@@ -851,6 +851,14 @@ REQUIRED_UPSTREAM_PATHS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+#: Required upstream paths that are intentionally scalar values. All other
+#: required paths are adapter-input containers and must resolve to a non-empty
+#: dict/list, not merely a truthy scalar placeholder.
+REQUIRED_UPSTREAM_SCALAR_PATHS: dict[str, tuple[str, ...]] = {
+    "super_pricing": ("providers.policy_radar.policy_count",),
+    "quant_trading": ("providers.policy_radar.policy_count",),
+}
+
 #: "any-of" path groups: at least ONE path in the tuple must resolve.
 #: Used where the adapter has a documented fallback chain (quant-trading's
 #: heat ranking can come from either provider block).
@@ -895,6 +903,15 @@ def _path_is_populated(value: Any) -> bool:
         return False
     if isinstance(value, (dict, list, str)):
         return len(value) > 0
+    return True
+
+
+def _path_has_valid_type(value: Any, *, require_container: bool) -> bool:
+    """True when a resolved path has the value kind the adapter can consume."""
+    if value is _MISSING or value is None:
+        return False
+    if require_container:
+        return isinstance(value, (dict, list))
     return True
 
 
@@ -973,8 +990,16 @@ def check_required_paths(
 
         audited += 1
         source_missing: list[str] = []
+        invalid_type_paths: dict[str, str] = {}
+        scalar_paths = set(REQUIRED_UPSTREAM_SCALAR_PATHS.get(source_key, ()))
         for dotted in required:
             value = _resolve_nested_path(doc, dotted)
+            require_container = dotted not in scalar_paths
+            if not _path_has_valid_type(value, require_container=require_container):
+                if value is not _MISSING and value is not None:
+                    invalid_type_paths[dotted] = type(value).__name__
+                source_missing.append(dotted)
+                continue
             if not _path_is_populated(value):
                 source_missing.append(dotted)
 
@@ -982,14 +1007,24 @@ def check_required_paths(
         # are missing — that is a real schema drift the adapter can't
         # absorb via its documented fallback chain.
         for group in REQUIRED_UPSTREAM_ANY_OF.get(source_key, ()):
+            for dotted in group:
+                value = _resolve_nested_path(doc, dotted)
+                if not _path_has_valid_type(value, require_container=True):
+                    if value is not _MISSING and value is not None:
+                        invalid_type_paths[dotted] = type(value).__name__
             if not any(
-                _path_is_populated(_resolve_nested_path(doc, dotted))
+                _path_has_valid_type(
+                    (value := _resolve_nested_path(doc, dotted)),
+                    require_container=True,
+                )
+                and _path_is_populated(value)
                 for dotted in group
             ):
                 source_missing.append(" | ".join(group) + " (none present)")
 
         entry["status"] = "ok" if not source_missing else "missing_paths"
         entry["missing_paths"] = source_missing
+        entry["invalid_type_paths"] = invalid_type_paths
         per_source[source_key] = entry
         if source_missing:
             shown = ", ".join(source_missing[:3])
