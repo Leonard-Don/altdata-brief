@@ -912,7 +912,7 @@ def _path_has_valid_type(value: Any, *, require_container: bool) -> bool:
         return False
     if require_container:
         return isinstance(value, (dict, list))
-    return True
+    return not isinstance(value, (dict, list))
 
 
 def _raw_summary_path_for(
