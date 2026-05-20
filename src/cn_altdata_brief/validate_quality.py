@@ -904,10 +904,11 @@ def _raw_summary_path_for(
     """Find the raw public-summary file for a source.
 
     Prefers the ``public_summary_path`` the adapter stamped on its payload
-    (so the check reads the *exact* file the adapter consumed). Falls back
-    to the configured default path. Returns ``None`` when neither yields an
-    existing file — the check then skips that source (INFO), since there is
-    no upstream artifact to audit (e.g. the adapter ran in cache mode).
+    so the check reads the *exact* file the adapter consumed. Returns
+    ``None`` when the payload did not come from an explicit public summary
+    or the stamped file is unavailable — the check then skips that source
+    (INFO), since there is no source-local upstream artifact to audit (e.g.
+    the adapter ran in cache mode).
     """
     if payload is not None:
         stamped = payload.data.get("public_summary_path")
@@ -915,14 +916,7 @@ def _raw_summary_path_for(
             p = Path(stamped)
             if p.exists():
                 return p
-    # Fall back to the configured default location.
-    from cn_altdata_brief.config import public_summary_path
-
-    try:
-        default = public_summary_path(source_key)
-    except KeyError:
-        return None
-    return default if default.exists() else None
+    return None
 
 
 def check_required_paths(
@@ -940,7 +934,7 @@ def check_required_paths(
 
     ``summary_paths`` lets tests/contract-tests inject the exact files to
     audit. In production the paths come from each payload's stamped
-    ``public_summary_path`` (falling back to the configured default).
+    ``public_summary_path``.
 
     Severity:
 

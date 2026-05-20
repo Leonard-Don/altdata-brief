@@ -413,6 +413,65 @@ def test_required_paths_quant_fails_when_all_heat_sources_missing(tmp_path: Path
     assert "none present" in r.message
 
 
+def test_required_paths_cache_payload_does_not_audit_default_summary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cache/synthetic payloads must not read unrelated sibling public summaries."""
+    stale_summary = _write_summary(
+        tmp_path / "unrelated_public_summary.json",
+        {"schema_version": 1, "providers": {"macro_hf": {}}},
+    )
+    from cn_altdata_brief import config as config_mod
+
+    monkeypatch.setattr(
+        config_mod,
+        "public_summary_path",
+        lambda source_key: stale_summary,
+    )
+
+    payloads = {
+        "super_pricing": _payload(
+            "super_pricing",
+            {
+                "source_mode": "cache",
+                "policy_radar": {"industry_signals": []},
+                "macro_hf": {"metals": []},
+            },
+        )
+    }
+
+    r = vq.check_required_paths(payloads)
+
+    assert r.level == INFO
+    assert r.detail is not None
+    assert r.detail["audited_sources"] == 0
+    assert r.detail["per_source"]["super_pricing"]["status"] == "skipped_no_summary"
+
+
+def test_required_paths_audits_explicit_payload_public_summary(tmp_path: Path) -> None:
+    """A payload-stamped public summary path is still the source of truth."""
+    summary = _write_summary(
+        tmp_path / "explicit_public_summary.json",
+        {"schema_version": 1, "providers": {"macro_hf": {}}},
+    )
+    payloads = {
+        "super_pricing": _payload(
+            "super_pricing",
+            {"source_mode": "public", "public_summary_path": str(summary)},
+        )
+    }
+
+    r = vq.check_required_paths(payloads)
+
+    assert r.level == FAIL
+    assert r.detail is not None
+    assert r.detail["audited_sources"] == 1
+    assert r.detail["per_source"]["super_pricing"]["path"] == str(summary)
+    missing = r.detail["per_source"]["super_pricing"]["missing_paths"]
+    assert "providers.macro_hf.metals" in missing
+
+
 # ---------------------------------------------------------------------------
 # 6. All-pass case across all strict checks
 # ---------------------------------------------------------------------------
