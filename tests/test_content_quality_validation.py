@@ -478,6 +478,34 @@ def test_required_paths_negative_policy_count_fails_with_path(
     assert entry["invalid_type_paths"]["providers.policy_radar.policy_count"] == "int"
 
 
+def test_required_paths_fractional_policy_count_fails_with_path(
+    tmp_path: Path,
+) -> None:
+    """policy_count is a whole-number count; fractional JSON numbers are unusable."""
+    summary = _write_summary(
+        tmp_path / "sp.json",
+        {
+            "schema_version": 1,
+            "providers": {
+                "policy_radar": {
+                    "industry_signals": {"电网": {"signal": "bullish"}},
+                    "policy_count": 1.5,
+                },
+                "macro_hf": {"metals": [{"metal": "copper"}]},
+            },
+        },
+    )
+
+    r = vq.check_required_paths({}, summary_paths={"super_pricing": summary})
+
+    assert r.level == FAIL
+    assert "providers.policy_radar.policy_count" in r.message
+    assert r.detail is not None
+    entry = r.detail["per_source"]["super_pricing"]
+    assert "providers.policy_radar.policy_count" in entry["missing_paths"]
+    assert entry["invalid_type_paths"]["providers.policy_radar.policy_count"] == "float"
+
+
 def test_required_paths_quant_accepts_documented_heat_fallback(tmp_path: Path) -> None:
     """Quant can source heat from policy_radar.industry_signals when industry_heat is absent."""
     summary = _write_summary(

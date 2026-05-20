@@ -926,6 +926,8 @@ def _path_is_int_coercible_scalar(value: Any) -> bool:
     """True when a required count scalar can pass int() without going negative."""
     if isinstance(value, bool):
         return False
+    if isinstance(value, float) and not value.is_integer():
+        return False
     try:
         coerced = int(value)
     except (TypeError, ValueError, OverflowError):
