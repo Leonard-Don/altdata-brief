@@ -859,6 +859,28 @@ REQUIRED_UPSTREAM_SCALAR_PATHS: dict[str, tuple[str, ...]] = {
     "quant_trading": ("providers.policy_radar.policy_count",),
 }
 
+#: Required upstream containers with a known adapter access pattern. These
+#: catch shape drift inside the broad dict/list container class.
+REQUIRED_UPSTREAM_CONTAINER_TYPES: dict[
+    str, dict[str, type | tuple[type, ...]]
+] = {
+    "super_pricing": {
+        "providers": dict,
+        "providers.policy_radar": dict,
+        "providers.policy_radar.industry_signals": dict,
+        "providers.macro_hf": dict,
+        "providers.macro_hf.metals": dict,
+    },
+    "quant_trading": {
+        "providers": dict,
+        "providers.policy_radar": dict,
+        "providers.industry_heat.top_industries_by_score": list,
+        "providers.policy_radar.top_industries": list,
+        "providers.policy_radar.industry_signals": dict,
+    },
+    "index_research": {"verdicts": (dict, list)},
+}
+
 #: Scalar upstream paths that must be accepted by the adapter's ``int()``
 #: normalization, rather than merely being non-container placeholders.
 REQUIRED_UPSTREAM_INT_SCALAR_PATHS: dict[str, tuple[str, ...]] = {
@@ -913,11 +935,18 @@ def _path_is_populated(value: Any) -> bool:
     return True
 
 
-def _path_has_valid_type(value: Any, *, require_container: bool) -> bool:
+def _path_has_valid_type(
+    value: Any,
+    *,
+    require_container: bool,
+    container_type: type | tuple[type, ...] | None = None,
+) -> bool:
     """True when a resolved path has the value kind the adapter can consume."""
     if value is _MISSING or value is None:
         return False
     if require_container:
+        if container_type is not None:
+            return isinstance(value, container_type)
         return isinstance(value, (dict, list))
     return not isinstance(value, (dict, list))
 
@@ -1015,10 +1044,16 @@ def check_required_paths(
         int_scalar_paths = set(
             REQUIRED_UPSTREAM_INT_SCALAR_PATHS.get(source_key, ())
         )
+        container_types = REQUIRED_UPSTREAM_CONTAINER_TYPES.get(source_key, {})
         for dotted in required:
             value = _resolve_nested_path(doc, dotted)
             require_container = dotted not in scalar_paths
-            if not _path_has_valid_type(value, require_container=require_container):
+            container_type = container_types.get(dotted) if require_container else None
+            if not _path_has_valid_type(
+                value,
+                require_container=require_container,
+                container_type=container_type,
+            ):
                 if value is not _MISSING and value is not None:
                     invalid_type_paths[dotted] = type(value).__name__
                 source_missing.append(dotted)
@@ -1039,13 +1074,18 @@ def check_required_paths(
         for group in REQUIRED_UPSTREAM_ANY_OF.get(source_key, ()):
             for dotted in group:
                 value = _resolve_nested_path(doc, dotted)
-                if not _path_has_valid_type(value, require_container=True):
+                if not _path_has_valid_type(
+                    value,
+                    require_container=True,
+                    container_type=container_types.get(dotted),
+                ):
                     if value is not _MISSING and value is not None:
                         invalid_type_paths[dotted] = type(value).__name__
             if not any(
                 _path_has_valid_type(
                     (value := _resolve_nested_path(doc, dotted)),
                     require_container=True,
+                    container_type=container_types.get(dotted),
                 )
                 and _path_is_populated(value)
                 for dotted in group
@@ -1702,6 +1742,7 @@ __all__ = [
     "FingerprintEntry",
     "POLICY_IMPACT_FLOOR",
     "REQUIRED_UPSTREAM_ANY_OF",
+    "REQUIRED_UPSTREAM_CONTAINER_TYPES",
     "REQUIRED_UPSTREAM_PATHS",
     "SIGNAL_DENSITY_MIN_RATIO",
     "SignalObservation",

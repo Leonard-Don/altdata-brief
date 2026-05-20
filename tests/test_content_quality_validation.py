@@ -396,6 +396,32 @@ def test_required_paths_wrong_type_container_fails_with_path(tmp_path: Path) -> 
     assert entry["invalid_type_paths"]["providers.macro_hf.metals"] == "str"
 
 
+def test_required_paths_wrong_container_kind_fails_with_path(tmp_path: Path) -> None:
+    """A public-summary container must match the adapter's exact access pattern."""
+    summary = _write_summary(
+        tmp_path / "sp.json",
+        {
+            "schema_version": 1,
+            "providers": {
+                "policy_radar": {
+                    "industry_signals": {"电网": {"signal": "bullish"}},
+                    "policy_count": 1,
+                },
+                "macro_hf": {"metals": [{"metal": "copper"}]},
+            },
+        },
+    )
+
+    r = vq.check_required_paths({}, summary_paths={"super_pricing": summary})
+
+    assert r.level == FAIL
+    assert "providers.macro_hf.metals" in r.message
+    assert r.detail is not None
+    entry = r.detail["per_source"]["super_pricing"]
+    assert "providers.macro_hf.metals" in entry["missing_paths"]
+    assert entry["invalid_type_paths"]["providers.macro_hf.metals"] == "list"
+
+
 def test_required_paths_wrong_type_scalar_fails_with_path(tmp_path: Path) -> None:
     """A required upstream scalar present as a container is still unusable."""
     summary = _write_summary(
@@ -407,7 +433,7 @@ def test_required_paths_wrong_type_scalar_fails_with_path(tmp_path: Path) -> Non
                     "industry_signals": {"电网": {"signal": "bullish"}},
                     "policy_count": {"count": 1},
                 },
-                "macro_hf": {"metals": [{"metal": "copper"}]},
+                "macro_hf": {"metals": {"copper": {"trend": "up"}}},
             },
         },
     )
@@ -435,7 +461,7 @@ def test_required_paths_non_numeric_policy_count_fails_with_path(
                     "industry_signals": {"电网": {"signal": "bullish"}},
                     "policy_count": "not-a-number",
                 },
-                "macro_hf": {"metals": [{"metal": "copper"}]},
+                "macro_hf": {"metals": {"copper": {"trend": "up"}}},
             },
         },
     )
@@ -463,7 +489,7 @@ def test_required_paths_negative_policy_count_fails_with_path(
                     "industry_signals": {"电网": {"signal": "bullish"}},
                     "policy_count": -1,
                 },
-                "macro_hf": {"metals": [{"metal": "copper"}]},
+                "macro_hf": {"metals": {"copper": {"trend": "up"}}},
             },
         },
     )
@@ -491,7 +517,7 @@ def test_required_paths_fractional_policy_count_fails_with_path(
                     "industry_signals": {"电网": {"signal": "bullish"}},
                     "policy_count": 1.5,
                 },
-                "macro_hf": {"metals": [{"metal": "copper"}]},
+                "macro_hf": {"metals": {"copper": {"trend": "up"}}},
             },
         },
     )
