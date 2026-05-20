@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from pathlib import Path
 
 try:
@@ -67,7 +67,7 @@ def _format_beijing_time(
     if parsed.tzinfo is None:
         # Same convention as ``datetime.utcnow()`` — every emitter in
         # the project hands us UTC, so a naive value means UTC.
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
     local = parsed.astimezone(_BEIJING_TZ)
 
     fmt = "%Y-%m-%d %H:%M:%S" if with_seconds else "%Y-%m-%d %H:%M"
@@ -123,6 +123,9 @@ def render_site_index(
     if not briefs:
         lines.append("_暂无简报，请运行 `uv run cn-altdata-brief generate` 生成首份。_\n")
     else:
+        lines.append(
+            f"共 {len(briefs)} 份日报，覆盖 {briefs[-1].stem} 至 {briefs[0].stem}；最新在前。\n\n"
+        )
         for b in briefs:
             lines.append(f"- [{b.stem}]({b.name})\n")
 
