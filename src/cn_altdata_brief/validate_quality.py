@@ -800,6 +800,257 @@ def check_schema_regression(
 
 
 # ---------------------------------------------------------------------------
+# Required-upstream-path check (ERROR-level) — schema-drift early warning
+# ---------------------------------------------------------------------------
+#
+# ``schema_regression`` checks the *internal, normalized* payload shape —
+# i.e. the dict AFTER the adapter's _normalize_* functions ran. That is
+# blind to the silent-degradation failure mode: when an upstream renames a
+# deep nested field, ``dict.get`` returns None/{}, the normalizer emits
+# zeros, and ``schema_regression`` still sees a structurally-fine internal
+# payload. The brief ships all-zeros with no loud signal.
+#
+# This check closes that gap by validating the RAW upstream public-summary
+# JSON against the exact deep nested paths the adapters are contract-coupled
+# to. If ``providers.macro_hf.metals`` disappears upstream, this FAILS and
+# names the path — instead of the brief silently substituting 0.
+#
+# Path syntax: dotted segments. A ``[]`` segment means "a non-empty dict or
+# list here" (we don't assert specific child keys for the leaf collections —
+# their per-row shape is the adapter's concern; we assert the *container*
+# the adapter reaches into actually exists and is populated).
+
+#: Per-source required nested paths in the RAW public-summary JSON. These
+#: mirror the deep paths each adapter's ``_load_from_public_summary`` reads.
+#: When an upstream renames one of these, the check FAILs loudly.
+#:
+#: ETF 512400 is intentionally absent: its ``liveSnapshot.json`` is a JS-app
+#: artifact with a different (non-``providers``) shape, and the ETF
+#: structural checks already live in ``validate.py``
+#: (``etf_512400.required_source_health`` etc.). Adding it here would
+#: duplicate that coverage.
+REQUIRED_UPSTREAM_PATHS: dict[str, tuple[str, ...]] = {
+    "super_pricing": (
+        "providers",
+        "providers.policy_radar",
+        "providers.policy_radar.industry_signals",
+        "providers.policy_radar.policy_count",
+        "providers.macro_hf",
+        "providers.macro_hf.metals",
+    ),
+    "quant_trading": (
+        "providers",
+        "providers.policy_radar",
+        "providers.policy_radar.policy_count",
+        # The adapter prefers industry_heat.top_industries_by_score and
+        # falls back to policy_radar.top_industries — at least one heat
+        # source must exist; that "any-of" rule is handled specially below.
+    ),
+    "index_research": (
+        "verdicts",
+    ),
+}
+
+#: "any-of" path groups: at least ONE path in the tuple must resolve.
+#: Used where the adapter has a documented fallback chain (quant-trading's
+#: heat ranking can come from either provider block).
+REQUIRED_UPSTREAM_ANY_OF: dict[str, tuple[tuple[str, ...], ...]] = {
+    "quant_trading": (
+        (
+            "providers.industry_heat.top_industries_by_score",
+            "providers.policy_radar.top_industries",
+            "providers.policy_radar.industry_signals",
+        ),
+    ),
+}
+
+
+_MISSING = object()
+
+
+def _resolve_nested_path(doc: Any, dotted: str) -> Any:
+    """Walk a dotted path through nested dicts; return ``_MISSING`` if absent.
+
+    Only dict traversal is supported — every segment must index into a
+    ``dict``. A segment that hits a non-dict (or a missing key) yields
+    ``_MISSING`` so the caller can report the exact failing path.
+    """
+    node: Any = doc
+    for segment in dotted.split("."):
+        if not isinstance(node, dict) or segment not in node:
+            return _MISSING
+        node = node[segment]
+    return node
+
+
+def _path_is_populated(value: Any) -> bool:
+    """True when a resolved path holds a usable value.
+
+    A required path that resolves to ``None``, an empty dict, or an empty
+    list is treated as effectively-missing — an upstream that renamed the
+    real field often leaves an empty husk behind. Scalars (ints, strings,
+    bools, floats) count as populated.
+    """
+    if value is _MISSING or value is None:
+        return False
+    if isinstance(value, (dict, list, str)):
+        return len(value) > 0
+    return True
+
+
+def _raw_summary_path_for(
+    source_key: str, payload: AdapterPayload | None
+) -> Path | None:
+    """Find the raw public-summary file for a source.
+
+    Prefers the ``public_summary_path`` the adapter stamped on its payload
+    (so the check reads the *exact* file the adapter consumed). Falls back
+    to the configured default path. Returns ``None`` when neither yields an
+    existing file — the check then skips that source (INFO), since there is
+    no upstream artifact to audit (e.g. the adapter ran in cache mode).
+    """
+    if payload is not None:
+        stamped = payload.data.get("public_summary_path")
+        if isinstance(stamped, str) and stamped:
+            p = Path(stamped)
+            if p.exists():
+                return p
+    # Fall back to the configured default location.
+    from cn_altdata_brief.config import public_summary_path
+
+    try:
+        default = public_summary_path(source_key)
+    except KeyError:
+        return None
+    return default if default.exists() else None
+
+
+def check_required_paths(
+    payloads: dict[str, AdapterPayload | None],
+    *,
+    summary_paths: dict[str, Path] | None = None,
+) -> CheckResult:
+    """FAIL when a required deep nested path is missing from a raw summary.
+
+    For each source in :data:`REQUIRED_UPSTREAM_PATHS`, the check locates
+    the raw public-summary JSON, parses it, and verifies every required
+    dotted path resolves to a populated value. Any missing path is
+    surfaced **by name** — turning the previously-silent "upstream renamed
+    a field → brief publishes zeros" failure into a loud, explicit FAIL.
+
+    ``summary_paths`` lets tests/contract-tests inject the exact files to
+    audit. In production the paths come from each payload's stamped
+    ``public_summary_path`` (falling back to the configured default).
+
+    Severity:
+
+    * **FAIL** — at least one required path is missing/empty in a summary
+      that was found and parsed.
+    * **WARN** — a summary file could not be parsed (corrupt JSON).
+    * **INFO** — no auditable summary files found (e.g. every adapter ran
+      in cache mode), or every required path resolved.
+    """
+    name = "required_paths"
+    per_source: dict[str, dict[str, Any]] = {}
+    missing_report: list[str] = []
+    parse_warnings: list[str] = []
+    audited = 0
+
+    for source_key, required in REQUIRED_UPSTREAM_PATHS.items():
+        if summary_paths is not None:
+            path = summary_paths.get(source_key)
+            if path is not None and not Path(path).exists():
+                path = None
+        else:
+            path = _raw_summary_path_for(source_key, payloads.get(source_key))
+
+        entry: dict[str, Any] = {"path": str(path) if path else None}
+        if path is None:
+            entry["status"] = "skipped_no_summary"
+            per_source[source_key] = entry
+            continue
+
+        try:
+            with Path(path).open(encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, json.JSONDecodeError) as exc:
+            entry["status"] = "parse_error"
+            entry["error"] = str(exc)
+            parse_warnings.append(f"{source_key}: unreadable summary ({path})")
+            per_source[source_key] = entry
+            continue
+
+        audited += 1
+        source_missing: list[str] = []
+        for dotted in required:
+            value = _resolve_nested_path(doc, dotted)
+            if not _path_is_populated(value):
+                source_missing.append(dotted)
+
+        # "any-of" groups: the group fails only when ALL of its members
+        # are missing — that is a real schema drift the adapter can't
+        # absorb via its documented fallback chain.
+        for group in REQUIRED_UPSTREAM_ANY_OF.get(source_key, ()):
+            if not any(
+                _path_is_populated(_resolve_nested_path(doc, dotted))
+                for dotted in group
+            ):
+                source_missing.append(" | ".join(group) + " (none present)")
+
+        entry["status"] = "ok" if not source_missing else "missing_paths"
+        entry["missing_paths"] = source_missing
+        per_source[source_key] = entry
+        if source_missing:
+            shown = ", ".join(source_missing[:3])
+            extra = (
+                f" (+ {len(source_missing) - 3} more)"
+                if len(source_missing) > 3
+                else ""
+            )
+            missing_report.append(f"{source_key} missing: {shown}{extra}")
+
+    detail = {
+        "audited_sources": audited,
+        "per_source": per_source,
+    }
+
+    if missing_report:
+        return CheckResult(
+            name=name,
+            level=FAIL,
+            message=(
+                "; ".join(missing_report)
+                + ". Upstream schema drifted — the adapter would silently "
+                "substitute zeros for these paths."
+            ),
+            detail=detail,
+        )
+    if parse_warnings:
+        return CheckResult(
+            name=name,
+            level=WARN,
+            message="; ".join(parse_warnings),
+            detail=detail,
+        )
+    if audited == 0:
+        return CheckResult(
+            name=name,
+            level=INFO,
+            message="no upstream public summaries available to audit; skipped.",
+            detail=detail,
+        )
+    return CheckResult(
+        name=name,
+        level=INFO,
+        message=(
+            f"all required nested paths present across {audited} "
+            "upstream public summaries."
+        ),
+        detail=detail,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Placeholder detector check (ERROR-level)
 # ---------------------------------------------------------------------------
 #
@@ -1327,12 +1578,18 @@ def run_strict_checks(
     persist: bool = True,
     include: tuple[str, ...] | None = None,
     signal_history_path: Path | None = None,
+    summary_paths: dict[str, Path] | None = None,
 ) -> list[CheckResult]:
-    """Run any subset of the six quality checks.
+    """Run any subset of the seven quality checks.
 
     ``include`` is a tuple of check identifiers — when ``None``, runs all
-    six. Identifiers map to: ``"fingerprint"``, ``"density"``,
-    ``"consistency"``, ``"schema"``, ``"placeholder"``, ``"temporal"``.
+    seven. Identifiers map to: ``"fingerprint"``, ``"density"``,
+    ``"consistency"``, ``"schema"``, ``"placeholder"``, ``"temporal"``,
+    ``"required_paths"``.
+
+    ``required_paths`` (v0.13) audits the RAW upstream public-summary JSON
+    for the deep nested paths the adapters depend on — the loud-failure
+    guard against silent schema drift.
     """
     include = include if include is not None else (
         "fingerprint",
@@ -1341,6 +1598,7 @@ def run_strict_checks(
         "schema",
         "placeholder",
         "temporal",
+        "required_paths",
     )
     out: list[CheckResult] = []
     if "fingerprint" in include:
@@ -1369,6 +1627,8 @@ def run_strict_checks(
                 persist=persist,
             )
         )
+    if "required_paths" in include:
+        out.append(check_required_paths(payloads, summary_paths=summary_paths))
     return out
 
 
@@ -1379,6 +1639,8 @@ __all__ = [
     "FINGERPRINT_STALE_DAYS",
     "FingerprintEntry",
     "POLICY_IMPACT_FLOOR",
+    "REQUIRED_UPSTREAM_ANY_OF",
+    "REQUIRED_UPSTREAM_PATHS",
     "SIGNAL_DENSITY_MIN_RATIO",
     "SignalObservation",
     "TEMPORAL_FLIP_RATE_MAX",
@@ -1387,6 +1649,7 @@ __all__ = [
     "check_content_fingerprint_freshness",
     "check_cross_source_consistency",
     "check_placeholder_detector",
+    "check_required_paths",
     "check_schema_regression",
     "check_signal_density",
     "check_temporal_coherence",

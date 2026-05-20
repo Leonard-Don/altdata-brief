@@ -1,6 +1,6 @@
-"""Tests for the v0.12 content-quality validate checks.
+"""Tests for the v0.12+ content-quality validate checks.
 
-Covers the four new check functions in ``validate_quality.py`` plus
+Covers the quality check functions in ``validate_quality.py`` plus
 their CLI integration via the ``--strict`` flag on ``validate``.
 """
 
@@ -336,7 +336,85 @@ def test_schema_unknown_keys_info(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 5. All-pass case across all four checks
+# 5. Required upstream path audit
+# ---------------------------------------------------------------------------
+
+
+def _write_summary(path: Path, data: dict) -> Path:
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+def test_required_paths_missing_nested_source_fails_with_path(tmp_path: Path) -> None:
+    """Raw upstream drift should FAIL and name the missing dotted path."""
+    summary = _write_summary(
+        tmp_path / "sp.json",
+        {
+            "schema_version": 1,
+            "providers": {
+                "policy_radar": {
+                    "industry_signals": {"电网": {"signal": "bullish"}},
+                    "policy_count": 1,
+                },
+                "macro_hf": {},
+            },
+        },
+    )
+
+    r = vq.check_required_paths({}, summary_paths={"super_pricing": summary})
+
+    assert r.level == FAIL
+    assert "providers.macro_hf.metals" in r.message
+    assert r.detail is not None
+    missing = r.detail["per_source"]["super_pricing"]["missing_paths"]
+    assert "providers.macro_hf.metals" in missing
+
+
+def test_required_paths_quant_accepts_documented_heat_fallback(tmp_path: Path) -> None:
+    """Quant can source heat from policy_radar.industry_signals when industry_heat is absent."""
+    summary = _write_summary(
+        tmp_path / "quant.json",
+        {
+            "schema_version": 1,
+            "providers": {
+                "policy_radar": {
+                    "policy_count": 1,
+                    "industry_signals": {"电网": {"signal": "bullish"}},
+                }
+            },
+        },
+    )
+
+    r = vq.check_required_paths({}, summary_paths={"quant_trading": summary})
+
+    assert r.level == INFO
+    assert r.detail is not None
+    assert r.detail["per_source"]["quant_trading"]["status"] == "ok"
+
+
+def test_required_paths_quant_fails_when_all_heat_sources_missing(tmp_path: Path) -> None:
+    """The any-of group should fail only when every documented heat source is absent."""
+    summary = _write_summary(
+        tmp_path / "quant.json",
+        {
+            "schema_version": 1,
+            "providers": {
+                "policy_radar": {
+                    "policy_count": 1,
+                }
+            },
+        },
+    )
+
+    r = vq.check_required_paths({}, summary_paths={"quant_trading": summary})
+
+    assert r.level == FAIL
+    assert "top_industries_by_score" in r.message
+    assert "none present" in r.message
+
+
+# ---------------------------------------------------------------------------
+# 6. All-pass case across all strict checks
 # ---------------------------------------------------------------------------
 
 
@@ -373,15 +451,17 @@ def test_strict_all_pass_on_diverse_data(tmp_path: Path) -> None:
         today="2026-05-19",
     )
     levels = {r.name: r.level for r in results}
-    # fingerprint, density, consistency all INFO; schema INFO (only super_pricing baseline loaded).
+    # fingerprint, density, consistency all INFO; schema INFO (only super_pricing baseline loaded);
+    # required_paths INFO-skips because no raw public summaries were injected.
     assert levels["content_fingerprint_freshness"] == INFO
     assert levels["signal_density"] == INFO
     assert levels["cross_source_consistency"] == INFO
     assert levels["schema_regression"] == INFO
+    assert levels["required_paths"] == INFO
 
 
 # ---------------------------------------------------------------------------
-# 6. Empty / degraded sources are tolerated
+# 7. Empty / degraded sources are tolerated
 # ---------------------------------------------------------------------------
 
 
@@ -408,6 +488,7 @@ def test_strict_handles_empty_payloads_gracefully(tmp_path: Path) -> None:
         "schema_regression",
         "placeholder_detector",
         "temporal_coherence",
+        "required_paths",
     }
     # Density: no rows anywhere → WARN; consistency: nothing to compare → INFO;
     # fingerprint: empty content → INFO ("skipped").
@@ -422,7 +503,7 @@ def test_strict_handles_empty_payloads_gracefully(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 7. CLI integration: --strict flag adds the four checks
+# 8. CLI integration: --strict flag adds the quality checks
 # ---------------------------------------------------------------------------
 
 
@@ -493,7 +574,7 @@ def test_strict_shell_guards_use_fail_on_warn() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 7. CLI integration: --strict flag adds the four checks
+# 8. CLI integration: --strict flag adds the quality checks
 # ---------------------------------------------------------------------------
 
 
@@ -503,7 +584,7 @@ def test_cli_validate_strict_runs_new_checks(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`validate --strict` extends the result list with the six quality checks."""
+    """`validate --strict` extends the result list with all quality checks."""
     # Redirect fingerprint + signal-history files to tmp so the test
     # doesn't write to output/.
     monkeypatch.setattr(vq, "DEFAULT_FINGERPRINT_HISTORY", tmp_path / "fp.json")
@@ -512,8 +593,8 @@ def test_cli_validate_strict_runs_new_checks(
     out = capsys.readouterr().out
     parsed = json.loads(out)
     names = [c["name"] for c in parsed["checks"]]
-    # 7 freshness/structural + 6 quality = 13
-    assert len(parsed["checks"]) == 13
+    # 7 freshness/structural + 7 quality = 14
+    assert len(parsed["checks"]) == 14
     for required in (
         "content_fingerprint_freshness",
         "signal_density",
@@ -521,6 +602,7 @@ def test_cli_validate_strict_runs_new_checks(
         "schema_regression",
         "placeholder_detector",
         "temporal_coherence",
+        "required_paths",
     ):
         assert required in names
     assert code in (EXIT_OK, EXIT_WARN, EXIT_FAIL)
@@ -540,6 +622,7 @@ def test_cli_validate_default_skips_quality_checks(
     assert "schema_regression" not in names
     assert "placeholder_detector" not in names
     assert "temporal_coherence" not in names
+    assert "required_paths" not in names
     assert len(parsed["checks"]) == 7
     assert code in (EXIT_OK, EXIT_WARN, EXIT_FAIL)
 
@@ -564,7 +647,7 @@ def test_cli_validate_single_check_flag(
 
 
 # ---------------------------------------------------------------------------
-# 8. Placeholder detector (FAIL on shipped placeholder)
+# 9. Placeholder detector (FAIL on shipped placeholder)
 # ---------------------------------------------------------------------------
 
 
@@ -780,7 +863,7 @@ def test_placeholder_cli_strict_fails_on_test_industry(
 
 
 # ---------------------------------------------------------------------------
-# 9. Temporal coherence (WARN on day-over-day jitter)
+# 10. Temporal coherence (WARN on day-over-day jitter)
 # ---------------------------------------------------------------------------
 
 
@@ -919,7 +1002,7 @@ def test_temporal_history_persistence_and_trimming(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 10. Per-check CLI flags for the new checks
+# 11. Per-check CLI flags for the new checks
 # ---------------------------------------------------------------------------
 
 
@@ -952,5 +1035,20 @@ def test_cli_check_temporal_flag(
     assert "temporal_coherence" in names
     assert "placeholder_detector" not in names
     assert "signal_density" not in names
+    assert len(parsed["checks"]) == 8  # 7 baseline + 1
+    assert code in (EXIT_OK, EXIT_WARN, EXIT_FAIL)
+
+
+def test_cli_check_required_paths_flag(
+    patched_default_paths: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``--check-required-paths`` runs only the raw upstream path audit."""
+    code = main(["validate", "--check-required-paths", "--json"])
+    parsed = json.loads(capsys.readouterr().out)
+    names = [c["name"] for c in parsed["checks"]]
+    assert "required_paths" in names
+    assert "temporal_coherence" not in names
+    assert "schema_regression" not in names
     assert len(parsed["checks"]) == 8  # 7 baseline + 1
     assert code in (EXIT_OK, EXIT_WARN, EXIT_FAIL)

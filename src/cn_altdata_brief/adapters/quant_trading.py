@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from cn_altdata_brief.adapters.base import AdapterBase, AdapterPayload, AdapterUnavailable
+from cn_altdata_brief.adapters.schema import SchemaContract, resolve_schema_version
 from cn_altdata_brief.config import (
     SOURCE_REPO_DIRS,
     SourceConfig,
@@ -43,6 +44,11 @@ from cn_altdata_brief.config import (
 DEFAULT_ROOT = SOURCE_REPO_DIRS["quant_trading"]
 DEFAULT_CACHE_DIR = DEFAULT_ROOT / "cache" / "alt_data" / "providers"
 DEFAULT_PUBLIC_SUMMARY = public_summary_path("quant_trading")
+
+#: Public-summary schema versions this adapter can parse. Bump (and add a
+#: parse branch in ``_parse_public_v*``) when quant-trading-system ships a
+#: new ``schema_version``. An unknown version raises loudly.
+_SCHEMA = SchemaContract(source="quant_trading", supported=frozenset({1}))
 
 
 class QuantTradingAdapter(AdapterBase):
@@ -212,40 +218,73 @@ class QuantTradingAdapter(AdapterBase):
         prefer it (the upstream's real heat ranking). When only
         ``policy_radar.top_industries`` exists, we derive heat the same
         way the cache path does, so the brief reads identical bullets.
+
+        The version is resolved against :data:`_SCHEMA` *before* any
+        nested field access — an unknown/newer ``schema_version`` raises
+        :class:`~cn_altdata_brief.adapters.schema.UnsupportedSchemaVersionError`
+        so the brief fails loud instead of deriving an empty ranking.
         """
         path = summary_path if summary_path is not None else self.public_summary
         payload = self.read_json(path)
-        providers = payload.get("providers", {}) or {}
+        version = resolve_schema_version(payload, _SCHEMA)
 
-        policy_block = providers.get("policy_radar", {}) or {}
-        heat_block = providers.get("industry_heat", {}) or {}
-        rotation_block = providers.get("etf_rotation", {}) or {}
-        paper_block = providers.get("paper_trading", {}) or {}
+        if version == 1:
+            data = _parse_public_v1(payload)
+        else:  # pragma: no cover - resolve_schema_version guarantees v in {1}
+            raise AssertionError(f"unhandled quant_trading schema_version={version}")
 
-        industries = _industries_from_public(policy_block, heat_block)
-
+        data.update(
+            {
+                "public_summary_path": str(path),
+                "cache_path": str(path),
+                "schema_version": version,
+                "generated_at": payload.get("generated_at"),
+                "source_mode": "public",
+            }
+        )
         return AdapterPayload(
             source=self.source_name,
             fetched_at=self.now_iso(),
             cache_path=path,
             live=False,
-            data={
-                "industries": industries,
-                "policy_count": int(policy_block.get("policy_count", 0) or 0),
-                "policy_timestamp": policy_block.get("last_refresh_at"),
-                "etf_rotation": {
-                    "audit_count": int(rotation_block.get("audit_count", 0) or 0),
-                    "strategy_count": int(rotation_block.get("strategy_count", 0) or 0),
-                    "last_refresh_at": rotation_block.get("last_refresh_at"),
-                },
-                "paper_trading": paper_block or None,
-                "public_summary_path": str(path),
-                "cache_path": str(path),
-                "schema_version": payload.get("schema_version"),
-                "generated_at": payload.get("generated_at"),
-                "source_mode": "public",
-            },
+            data=data,
         )
+
+
+# ----------------------------------------------------------------------
+# Per-version parsers — one branch per supported schema_version.
+
+
+def _parse_public_v1(payload: dict[str, Any]) -> dict[str, Any]:
+    """Parse a ``schema_version: 1`` quant-trading public summary.
+
+    v1 shape::
+
+        providers.policy_radar.{policy_count, last_refresh_at, top_industries}
+        providers.industry_heat.top_industries_by_score   — authoritative heat
+        providers.etf_rotation.{audit_count, strategy_count, last_refresh_at}
+        providers.paper_trading.{...}                      — optional
+
+    Returns the internal ``data`` dict (without provenance keys — the
+    caller layers ``schema_version`` / ``source_mode`` on top).
+    """
+    providers = payload.get("providers", {}) or {}
+    policy_block = providers.get("policy_radar", {}) or {}
+    heat_block = providers.get("industry_heat", {}) or {}
+    rotation_block = providers.get("etf_rotation", {}) or {}
+    paper_block = providers.get("paper_trading", {}) or {}
+
+    return {
+        "industries": _industries_from_public(policy_block, heat_block),
+        "policy_count": int(policy_block.get("policy_count", 0) or 0),
+        "policy_timestamp": policy_block.get("last_refresh_at"),
+        "etf_rotation": {
+            "audit_count": int(rotation_block.get("audit_count", 0) or 0),
+            "strategy_count": int(rotation_block.get("strategy_count", 0) or 0),
+            "last_refresh_at": rotation_block.get("last_refresh_at"),
+        },
+        "paper_trading": paper_block or None,
+    }
 
 
 # ----------------------------------------------------------------------

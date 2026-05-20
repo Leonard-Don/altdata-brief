@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from cn_altdata_brief.adapters.base import AdapterPayload
@@ -61,20 +62,31 @@ def synthesize_etf_flow(
 
 def _format_quote(snap: dict[str, Any]) -> str:
     name = snap.get("name", "ETF 512400")
-    price = snap.get("price")
-    change_pct = snap.get("change_percent")
-    amount = snap.get("amount_cny")
-    turnover = snap.get("turnover_rate")
+    price = _coerce_float(snap.get("price"))
+    change_pct = _coerce_float(snap.get("change_percent"))
+    amount = _coerce_float(snap.get("amount_cny"))
+    turnover = _coerce_float(snap.get("turnover_rate"))
     parts = [f"**{name}** ({snap.get('code', '512400')})"]
     if price is not None:
         parts.append(f"现价 {price:.3f}")
     if change_pct is not None:
-        parts.append(f"涨跌 {float(change_pct) * 100:+.2f}%")
+        parts.append(f"涨跌 {change_pct * 100:+.2f}%")
     if amount:
-        parts.append(f"成交额 {float(amount) / 1e8:.2f} 亿")
+        parts.append(f"成交额 {amount / 1e8:.2f} 亿")
     if turnover is not None:
-        parts.append(f"换手 {float(turnover) * 100:.2f}%")
+        parts.append(f"换手 {turnover * 100:.2f}%")
     return " · ".join(parts)
+
+
+def _coerce_float(value: Any) -> float | None:
+    """Return a finite float for numeric public-summary scalars, else ``None``."""
+    if value is None:
+        return None
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return None
+    return out if math.isfinite(out) else None
 
 
 def _quote_source_usable(snap: dict[str, Any]) -> bool:
@@ -111,13 +123,13 @@ def _format_quote_unavailable(snap: dict[str, Any]) -> str:
 def _format_nav(snap: dict[str, Any]) -> str:
     nav = snap.get("nav", {}) or {}
     date = nav.get("date", "—")
-    unit = nav.get("unit")
-    daily = nav.get("daily_return")
+    unit = _coerce_float(nav.get("unit"))
+    daily = _coerce_float(nav.get("daily_return"))
     parts = [f"净值（{date}）"]
     if unit is not None:
         parts.append(f"单位净值 {unit:.4f}")
     if daily is not None:
-        parts.append(f"日收益 {float(daily) * 100:+.2f}%")
+        parts.append(f"日收益 {daily * 100:+.2f}%")
     return " · ".join(parts)
 
 

@@ -161,6 +161,39 @@ def test_etf_flow_hides_degraded_quote_price() -> None:
     assert "现价 2.207" not in " ".join(result["bullets"])
 
 
+def test_etf_flow_tolerates_string_typed_price_and_unit() -> None:
+    """Upstream JS snapshots sometimes stringify numbers; quote/nav
+    formatting must coerce rather than crash on f-string numeric specs.
+    """
+    payload = AdapterPayload(
+        source="ETF-512400",
+        fetched_at="2026-05-19T00:00:00Z",
+        cache_path=None,
+        live=False,
+        data={
+            "name": "有色金属ETF南方",
+            "code": "512400",
+            "price": "2.207",
+            "change_percent": 0.0036,
+            "nav": {"date": "2026-05-18", "unit": "2.0081", "daily_return": -0.0155},
+            "source_health": {
+                "required_total": 4,
+                "required_ok": 4,
+                "fallback": 0,
+                "verdict": "正常",
+                "quote_ok": True,
+                "quote_fallback": False,
+            },
+            "commodity_drivers": {},
+        },
+    )
+    result = synthesize_etf_flow(payload, None)
+    assert result["available"] is True
+    text = " ".join(result["bullets"])
+    assert "现价 2.207" in text
+    assert "单位净值 2.0081" in text
+
+
 # ---- industry -------------------------------------------------------------
 
 

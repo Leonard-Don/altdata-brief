@@ -23,6 +23,11 @@ from cn_altdata_brief.adapters import (
     SuperPricingAdapter,
 )
 from cn_altdata_brief.adapters.base import AdapterUnavailable
+from cn_altdata_brief.adapters.schema import (
+    MissingSchemaVersionError,
+    SchemaContract,
+    resolve_schema_version,
+)
 from cn_altdata_brief.config import SourceConfig, load_source_config
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -32,6 +37,35 @@ IX_PUBLIC = PUBLIC_FIXTURES / "index_research_summary.json"
 QT_PUBLIC = PUBLIC_FIXTURES / "quant_summary.json"
 # The ETF "public summary" is the JS app's liveSnapshot — same file used as cache.
 ETF_PUBLIC = FIXTURES / "etf_512400" / "liveSnapshot.json"
+
+
+# ----------------------------------------------------------------------
+# Schema-version dispatch
+# ----------------------------------------------------------------------
+
+
+class TestSchemaVersionDispatch:
+    def test_missing_version_uses_declared_implicit_default(self) -> None:
+        contract = SchemaContract(
+            source="etf_512400",
+            supported=frozenset({1}),
+            implicit_version=1,
+        )
+
+        assert resolve_schema_version({}, contract) == 1
+
+    def test_explicit_unusable_version_does_not_use_implicit_default(self) -> None:
+        contract = SchemaContract(
+            source="etf_512400",
+            supported=frozenset({1}),
+            implicit_version=1,
+        )
+
+        with pytest.raises(MissingSchemaVersionError) as exc_info:
+            resolve_schema_version({"schema_version": "v-next"}, contract)
+
+        assert "schema_version" in str(exc_info.value)
+        assert "v-next" in str(exc_info.value)
 
 
 # ----------------------------------------------------------------------

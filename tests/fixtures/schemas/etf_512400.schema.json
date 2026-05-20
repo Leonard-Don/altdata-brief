@@ -5,7 +5,7 @@
   "expected_payload_keys": {
     "_root": {
       "required": ["price", "change_percent", "trade_date", "nav", "source_health"],
-      "optional": ["generated_at", "mode", "code", "name", "amount_cny", "turnover_rate", "recent_nav", "commodity_drivers", "source_mode", "public_summary_path", "public_by_default"]
+      "optional": ["generated_at", "mode", "code", "name", "amount_cny", "turnover_rate", "recent_nav", "commodity_drivers", "source_mode", "public_summary_path", "public_by_default", "schema_version"]
     },
     "nav": {
       "required": ["date"],

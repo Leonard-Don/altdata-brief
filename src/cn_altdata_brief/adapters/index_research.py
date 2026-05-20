@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from cn_altdata_brief.adapters.base import AdapterBase, AdapterPayload, AdapterUnavailable
+from cn_altdata_brief.adapters.schema import SchemaContract, resolve_schema_version
 from cn_altdata_brief.config import (
     SOURCE_REPO_DIRS,
     SourceConfig,
@@ -37,6 +38,11 @@ DEFAULT_ROOT = SOURCE_REPO_DIRS["index_research"]
 DEFAULT_TABLE_DIR = DEFAULT_ROOT / "results" / "real_tables"
 DEFAULT_FIGURE_DIR = DEFAULT_ROOT / "results" / "figures"
 DEFAULT_PUBLIC_SUMMARY = public_summary_path("index_research")
+
+#: Public-summary schema versions this adapter can parse. Bump (and add a
+#: parse branch in ``_parse_public_v*``) when index-inclusion-research
+#: ships a new ``schema_version``. An unknown version raises loudly.
+_SCHEMA = SchemaContract(source="index_research", supported=frozenset({1}))
 
 
 class IndexResearchAdapter(AdapterBase):
@@ -166,42 +172,80 @@ class IndexResearchAdapter(AdapterBase):
 
         Both list-of-rows and dict-of-rows verdict shapes are accepted to
         stay compatible with the index project's evolving schema.
+
+        The version is resolved against :data:`_SCHEMA` *before* any
+        nested field access — an unknown/newer ``schema_version`` raises
+        :class:`~cn_altdata_brief.adapters.schema.UnsupportedSchemaVersionError`
+        so the brief fails loud instead of shipping empty verdicts.
         """
         path = summary_path if summary_path is not None else self.public_summary
         payload = self.read_json(path)
+        version = resolve_schema_version(payload, _SCHEMA)
 
-        verdicts = _parse_verdicts_block(payload.get("verdicts"))
-        pap_changes = _parse_pap_block(payload)
+        if version == 1:
+            data, figure_links = _parse_public_v1(payload, self.figure_dir)
+        else:  # pragma: no cover - resolve_schema_version guarantees v in {1}
+            raise AssertionError(f"unhandled index_research schema_version={version}")
 
-        figure_links = _resolve_figure_links(
-            self.figure_dir,
-            payload.get("figures"),
-            payload.get("figures_published"),
+        data.update(
+            {
+                "verdicts_path": str(path),
+                "pap_path": str(path),
+                "public_summary_path": str(path),
+                "schema_version": version,
+                "generated_at": payload.get("generated_at"),
+                "source_mode": "public",
+            }
         )
-
         return AdapterPayload(
             source=self.source_name,
             fetched_at=self.now_iso(),
             cache_path=path,
             live=False,
-            data={
-                "verdicts": verdicts,
-                "pap_changes": pap_changes,
-                "verdicts_path": str(path),
-                "pap_path": str(path),
-                "figure_links": [str(p) for p in figure_links],
-                "sensitivity": payload.get("sensitivity")
-                or payload.get("sensitivity_robustness"),
-                "hs300_rdd": payload.get("hs300_rdd"),
-                "pap_baseline": payload.get("pap_baseline"),
-                "pap_deviation_summary": payload.get("pap_deviation_summary"),
-                "public_summary_path": str(path),
-                "schema_version": payload.get("schema_version"),
-                "generated_at": payload.get("generated_at"),
-                "source_mode": "public",
-            },
+            data=data,
             files=figure_links,
         )
+
+
+# ----------------------------------------------------------------------
+# Per-version parsers — one branch per supported schema_version.
+
+
+def _parse_public_v1(
+    payload: dict[str, Any], figure_dir: Path
+) -> tuple[dict[str, Any], list[Path]]:
+    """Parse a ``schema_version: 1`` index-research public summary.
+
+    v1 shape::
+
+        verdicts                — list[row] OR dict[hid -> row]
+        pap                     — optional list[row]; else pap_deviation_summary
+        sensitivity / sensitivity_robustness
+        hs300_rdd               — headline RDD numbers
+        figures / figures_published
+
+    Returns ``(data, figure_links)`` — ``data`` is the internal dict
+    minus provenance keys, ``figure_links`` is also stashed on
+    ``AdapterPayload.files`` by the caller.
+    """
+    verdicts = _parse_verdicts_block(payload.get("verdicts"))
+    pap_changes = _parse_pap_block(payload)
+    figure_links = _resolve_figure_links(
+        figure_dir,
+        payload.get("figures"),
+        payload.get("figures_published"),
+    )
+    data = {
+        "verdicts": verdicts,
+        "pap_changes": pap_changes,
+        "figure_links": [str(p) for p in figure_links],
+        "sensitivity": payload.get("sensitivity")
+        or payload.get("sensitivity_robustness"),
+        "hs300_rdd": payload.get("hs300_rdd"),
+        "pap_baseline": payload.get("pap_baseline"),
+        "pap_deviation_summary": payload.get("pap_deviation_summary"),
+    }
+    return data, figure_links
 
 
 # ----------------------------------------------------------------------

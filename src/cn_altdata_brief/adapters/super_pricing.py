@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from cn_altdata_brief.adapters.base import AdapterBase, AdapterPayload, AdapterUnavailable
+from cn_altdata_brief.adapters.schema import SchemaContract, resolve_schema_version
 from cn_altdata_brief.config import (
     SOURCE_REPO_DIRS,
     SourceConfig,
@@ -33,6 +34,11 @@ from cn_altdata_brief.config import (
 DEFAULT_ROOT = SOURCE_REPO_DIRS["super_pricing"]
 DEFAULT_CACHE_DIR = DEFAULT_ROOT / "cache" / "alt_data" / "providers"
 DEFAULT_PUBLIC_SUMMARY = public_summary_path("super_pricing")
+
+#: Public-summary schema versions this adapter can parse. Bump (and add a
+#: parse branch in ``_parse_public_v*``) when super-pricing-system ships a
+#: new ``schema_version``. An unknown version raises loudly.
+_SCHEMA = SchemaContract(source="super_pricing", supported=frozenset({1}))
 
 
 class SuperPricingAdapter(AdapterBase):
@@ -157,39 +163,67 @@ class SuperPricingAdapter(AdapterBase):
     def _load_from_public_summary(
         self, *, summary_path: Path | None = None
     ) -> AdapterPayload:
-        """Read the sanitized public summary and map to internal shape.
+        """Read the sanitized public summary, routing on ``schema_version``.
 
-        The schema (v1, schema_version key) is:
-
-        * ``providers.policy_radar.industry_signals`` — same shape as cache
-        * ``providers.policy_radar.policy_count`` / ``last_refresh_at``
-        * ``providers.macro_hf.metals.<metal>.weekly_change_pct`` /
-          ``trend`` — flat per-metal dict (NO ``records[].raw_value``)
-        * ``providers.macro_hf.macro_pressure`` etc.
+        The version is resolved against :data:`_SCHEMA` *before* any
+        nested field access. An unknown/newer version raises
+        :class:`~cn_altdata_brief.adapters.schema.UnsupportedSchemaVersionError`
+        — the adapter refuses to guess a shape it was not written for,
+        which is the loud-failure contract (no silent all-zeros brief).
         """
         path = summary_path if summary_path is not None else self.public_summary
         payload = self.read_json(path)
-        providers = payload.get("providers", {}) or {}
+        version = resolve_schema_version(payload, _SCHEMA)
 
-        policy_block = providers.get("policy_radar", {}) or {}
-        macro_block = providers.get("macro_hf", {}) or {}
+        if version == 1:
+            data = _parse_public_v1(payload)
+        else:  # pragma: no cover - resolve_schema_version guarantees v in {1}
+            raise AssertionError(f"unhandled super_pricing schema_version={version}")
 
+        data.update(
+            {
+                "policy_cache_path": str(path),
+                "macro_cache_path": str(path),
+                "public_summary_path": str(path),
+                "schema_version": version,
+                "generated_at": payload.get("generated_at"),
+                "source_mode": "public",
+            }
+        )
         return AdapterPayload(
             source=self.source_name,
             fetched_at=self.now_iso(),
             cache_path=path,
             live=False,
-            data={
-                "policy_radar": _normalize_policy_from_public(policy_block),
-                "macro_hf": _normalize_macro_from_public(macro_block),
-                "policy_cache_path": str(path),
-                "macro_cache_path": str(path),
-                "public_summary_path": str(path),
-                "schema_version": payload.get("schema_version"),
-                "generated_at": payload.get("generated_at"),
-                "source_mode": "public",
-            },
+            data=data,
         )
+
+
+# ----------------------------------------------------------------------
+# Per-version parsers — one branch per supported schema_version.
+
+
+def _parse_public_v1(payload: dict[str, Any]) -> dict[str, Any]:
+    """Parse a ``schema_version: 1`` super-pricing public summary.
+
+    v1 shape::
+
+        providers.policy_radar.industry_signals   — dict[name -> info]
+        providers.policy_radar.policy_count / last_refresh_at
+        providers.macro_hf.metals.<metal>.weekly_change_pct / trend
+            — flat per-metal dict (NO ``records[].raw_value`` array)
+        providers.macro_hf.macro_pressure etc.
+
+    Returns the internal ``data`` dict (without provenance keys — the
+    caller layers ``schema_version`` / ``source_mode`` on top).
+    """
+    providers = payload.get("providers", {}) or {}
+    policy_block = providers.get("policy_radar", {}) or {}
+    macro_block = providers.get("macro_hf", {}) or {}
+    return {
+        "policy_radar": _normalize_policy_from_public(policy_block),
+        "macro_hf": _normalize_macro_from_public(macro_block),
+    }
 
 
 # ----------------------------------------------------------------------

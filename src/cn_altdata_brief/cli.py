@@ -258,10 +258,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Also run the v0.12 content-quality checks: fingerprint freshness, "
             "signal density, cross-source consistency, schema regression, "
-            "placeholder detector (ERROR-level), and temporal coherence. "
+            "placeholder detector (ERROR-level), temporal coherence, and "
+            "required upstream path audit. "
             "Equivalent to --check-fingerprint --check-density --check-consistency "
-            "--check-schema --check-placeholder --check-temporal. Default "
-            "validate keeps backward-compat with v0.2."
+            "--check-schema --check-placeholder --check-temporal "
+            "--check-required-paths. Default validate keeps backward-compat "
+            "with v0.2."
         ),
     )
     val.add_argument(
@@ -300,6 +302,15 @@ def _build_parser() -> argparse.ArgumentParser:
             "Run only the temporal_coherence check (subset of --strict). "
             "Warns when day-over-day signal flips exceed the threshold "
             "without a declared regime_change_event."
+        ),
+    )
+    val.add_argument(
+        "--check-required-paths",
+        action="store_true",
+        help=(
+            "Run only the required_paths check (subset of --strict). "
+            "Audits raw public-summary JSON for nested upstream paths that "
+            "adapters require before normalizing."
         ),
     )
     val.add_argument(
@@ -837,6 +848,7 @@ def _strict_includes_from_args(args: argparse.Namespace) -> tuple[str, ...] | No
             "schema",
             "placeholder",
             "temporal",
+            "required_paths",
         )
     subset: list[str] = []
     for flag, key in (
@@ -846,6 +858,7 @@ def _strict_includes_from_args(args: argparse.Namespace) -> tuple[str, ...] | No
         ("check_schema", "schema"),
         ("check_placeholder", "placeholder"),
         ("check_temporal", "temporal"),
+        ("check_required_paths", "required_paths"),
     ):
         if getattr(args, flag, False):
             subset.append(key)
