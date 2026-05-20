@@ -181,6 +181,7 @@ def test_render_site_index_with_briefs(tmp_path: Path) -> None:
     (tmp_path / "2026-99-99.md").write_text("# malformed date", encoding="utf-8")
     path = render_site_index(tmp_path)
     text = path.read_text(encoding="utf-8")
+    assert "共 2 份日报，覆盖 2026-05-16 至 2026-05-17；最新在前。" in text
     # newest first
     idx_17 = text.index("2026-05-17.md")
     idx_16 = text.index("2026-05-16.md")
