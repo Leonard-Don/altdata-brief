@@ -923,14 +923,14 @@ def _path_has_valid_type(value: Any, *, require_container: bool) -> bool:
 
 
 def _path_is_int_coercible_scalar(value: Any) -> bool:
-    """True when a scalar required path can pass the adapter's int() cast."""
+    """True when a required count scalar can pass int() without going negative."""
     if isinstance(value, bool):
         return False
     try:
-        int(value)
+        coerced = int(value)
     except (TypeError, ValueError, OverflowError):
         return False
-    return True
+    return coerced >= 0
 
 
 def _raw_summary_path_for(
