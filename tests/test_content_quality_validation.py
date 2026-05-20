@@ -472,6 +472,25 @@ def test_required_paths_audits_explicit_payload_public_summary(tmp_path: Path) -
     assert "providers.macro_hf.metals" in missing
 
 
+def test_required_paths_warns_when_explicit_summary_path_is_missing(
+    tmp_path: Path,
+) -> None:
+    """Explicit contract-test targets should warn instead of being skipped."""
+    missing_summary = tmp_path / "missing_public_summary.json"
+
+    r = vq.check_required_paths(
+        {},
+        summary_paths={"super_pricing": missing_summary},
+    )
+
+    assert r.level == WARN
+    assert "unreadable summary" in r.message
+    assert r.detail is not None
+    entry = r.detail["per_source"]["super_pricing"]
+    assert entry["status"] == "parse_error"
+    assert entry["path"] == str(missing_summary)
+
+
 # ---------------------------------------------------------------------------
 # 6. All-pass case across all strict checks
 # ---------------------------------------------------------------------------

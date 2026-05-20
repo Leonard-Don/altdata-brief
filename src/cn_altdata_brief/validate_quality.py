@@ -940,7 +940,7 @@ def check_required_paths(
 
     * **FAIL** — at least one required path is missing/empty in a summary
       that was found and parsed.
-    * **WARN** — a summary file could not be parsed (corrupt JSON).
+    * **WARN** — a summary file could not be opened or parsed.
     * **INFO** — no auditable summary files found (e.g. every adapter ran
       in cache mode), or every required path resolved.
     """
@@ -952,9 +952,8 @@ def check_required_paths(
 
     for source_key, required in REQUIRED_UPSTREAM_PATHS.items():
         if summary_paths is not None:
-            path = summary_paths.get(source_key)
-            if path is not None and not Path(path).exists():
-                path = None
+            explicit_path = summary_paths.get(source_key)
+            path = Path(explicit_path) if explicit_path is not None else None
         else:
             path = _raw_summary_path_for(source_key, payloads.get(source_key))
 
