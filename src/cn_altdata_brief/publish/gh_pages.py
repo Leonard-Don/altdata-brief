@@ -949,7 +949,7 @@ def _render_index_md(
         "|---|---|---|---|",
     ]
     if not dated_briefs:
-        lines.append("| _(暂无 / none yet)_ | — | — | — |")
+        lines.append("| _暂无_ | — | — | — |")
     else:
         for stem in dated_briefs:
             langs = (languages_per_date or {}).get(stem, [])
@@ -1074,7 +1074,7 @@ def _render_index_md(
     lines.append("        return;")
     lines.append("      }")
     lines.append(
-        '      setStatus("自动刷新 · " + new Date().toLocaleTimeString("zh-CN", { hour12: false }), "");'
+        '      setStatus("自动刷新 · " + new Date().toLocaleTimeString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" }), "");'
     )
     lines.append("    } catch (error) {")
     lines.append('      setStatus("自动刷新暂不可用", "error");')

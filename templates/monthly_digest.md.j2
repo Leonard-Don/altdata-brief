@@ -51,7 +51,7 @@ reversal_events_count: {{ reversal_events|length }}
 
 {% if reversal_events %}
 {% for e in reversal_events %}
-- **{{ e.name }}**（{{ '政策' if e.kind == 'policy' else '库存' }}） — 月内翻转 **{{ e.flips_in_month }}** 次 · 最近一次 `{{ e.flipped_from }}` → `{{ e.flipped_to }}` · flip dates={{ e.flip_dates|join(' → ') }}
+- **{{ e.name }}**（{{ '政策' if e.kind == 'policy' else '库存' }}） — 月内翻转 **{{ e.flips_in_month }}** 次 · 最近一次 `{{ e.flipped_from }}` → `{{ e.flipped_to }}` · 翻转日期={{ e.flip_dates|join(' → ') }}
 {% endfor %}
 {% else %}
 - _本月未观察到信号反转事件。_
@@ -131,7 +131,7 @@ _本月无可用周度回顾——可能 monthly 早于 weekly 节奏启动。_
 ## 元信息
 
 - 月份：`{{ month_label }}`
-- 区间：`{{ month_start }} → {{ month_end }}` (calendar month)
+- 区间：`{{ month_start }} → {{ month_end }}`（自然月）
 - 聚合方式：确定性规则合成（v0.11 暂不接入大模型合成；可选 `--with-llm` 生成英文版本）
 - 上游：output/briefs + output/digests 内已存在的 CN 简报 / 周报
 

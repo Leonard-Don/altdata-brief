@@ -833,10 +833,10 @@ def _top_signal_lines_monthly(
             direction = "由正转负" if evt.flipped_to < 0 else "由负转正"
             lines.append(
                 f"信号反转：**{evt.name}**（{kind_cn}）在本月 {direction}，"
-                f"flip dates={', '.join(evt.flip_dates)}。"
+                f"翻转日期={', '.join(evt.flip_dates)}。"
             )
     if not lines:
-        lines.append("本月未发现持续 12 天以上的主题，亦无信号反转——属于 alt-data 的安静一月。")
+        lines.append("本月未发现持续 12 天以上的主题，亦无信号反转——属于另类数据的安静一月。")
     return lines
 
 
@@ -853,7 +853,7 @@ def _carry_forward_forecast(
                 f"且月末最后一周仍出现 {theme.last_week_occurrences} 次，下月值得继续跟踪。"
             )
     if not out:
-        out.append("月末无延续到下月的强主题；按既定 daily/weekly 节奏即可。")
+        out.append("月末无延续到下月的强主题；按既定日报/周报节奏即可。")
     return out
 
 

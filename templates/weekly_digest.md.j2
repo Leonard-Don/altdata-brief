@@ -51,7 +51,7 @@ inflections_count: {{ inflections|length }}
 
 {% if inflections %}
 {% for f in inflections %}
-- **{{ f.name }}**（{{ '政策' if f.kind == 'policy' else '库存' }}） — 由 `{{ f.flipped_from }}` 转为 `{{ f.flipped_to }}` · flip dates={{ f.flip_dates|join(' → ') }}
+- **{{ f.name }}**（{{ '政策' if f.kind == 'policy' else '库存' }}） — 由 `{{ f.flipped_from }}` 转为 `{{ f.flipped_to }}` · 翻转日期={{ f.flip_dates|join(' → ') }}
 {% endfor %}
 {% else %}
 - _本周未观察到信号反转。_

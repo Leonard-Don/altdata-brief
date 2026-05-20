@@ -253,5 +253,5 @@ def _health_verdict(required_ok: int, required_total: int, fallback_count: int) 
     if required_ok < required_total:
         return "降级"
     if fallback_count > 0:
-        return "可用 (含 proxy)"
+        return "可用 (含兜底)"
     return "良好"

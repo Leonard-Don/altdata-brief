@@ -670,10 +670,10 @@ def _top_signal_lines(
         kind_cn = "政策" if flip.kind == "policy" else "库存"
         lines.append(
             f"信号反转：**{flip.name}**（{kind_cn}）在本周内 {direction}，"
-            f"flip dates={', '.join(flip.flip_dates)}。"
+            f"翻转日期={', '.join(flip.flip_dates)}。"
         )
     if not lines:
-        lines.append("本周无重复主题，亦无信号反转——属于 alt-data 的安静一周。")
+        lines.append("本周无重复主题，亦无信号反转——属于另类数据的安静一周。")
     return lines
 
 
