@@ -32,7 +32,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from cn_altdata_brief.adapters.base import AdapterPayload
 from cn_altdata_brief.validate import (
@@ -820,83 +820,69 @@ def check_schema_regression(
 # their per-row shape is the adapter's concern; we assert the *container*
 # the adapter reaches into actually exists and is populated).
 
-#: Per-source required nested paths in the RAW public-summary JSON. These
-#: mirror the deep paths each adapter's ``_load_from_public_summary`` reads.
-#: When an upstream renames one of these, the check FAILs loudly.
+#: Per-source required nested paths in the RAW public-summary JSON. Each
+#: :class:`_RequiredPath` mirrors a deep path an adapter's
+#: ``_load_from_public_summary`` reads; when an upstream renames one of
+#: these the ``required_paths`` check FAILs loudly.
 #:
 #: ETF 512400 is intentionally absent: its ``liveSnapshot.json`` is a JS-app
 #: artifact with a different (non-``providers``) shape, and the ETF
 #: structural checks already live in ``validate.py``
 #: (``etf_512400.required_source_health`` etc.). Adding it here would
 #: duplicate that coverage.
-REQUIRED_UPSTREAM_PATHS: dict[str, tuple[str, ...]] = {
+
+
+@dataclass(frozen=True, slots=True)
+class _RequiredPath:
+    """One required path in a raw upstream public-summary JSON.
+
+    ``kind`` is ``"container"`` — the path must resolve to a non-empty
+    dict/list, optionally matching ``container_type`` — or ``"int_scalar"``:
+    a non-negative, ``int()``-coercible scalar (e.g. ``policy_count``).
+    """
+
+    dotted: str
+    kind: Literal["container", "int_scalar"] = "container"
+    container_type: type | tuple[type, ...] | None = None
+
+
+REQUIRED_UPSTREAM_PATHS: dict[str, tuple[_RequiredPath, ...]] = {
     "super_pricing": (
-        "providers",
-        "providers.policy_radar",
-        "providers.policy_radar.industry_signals",
-        "providers.policy_radar.policy_count",
-        "providers.macro_hf",
-        "providers.macro_hf.metals",
+        _RequiredPath("providers", container_type=dict),
+        _RequiredPath("providers.policy_radar", container_type=dict),
+        _RequiredPath("providers.policy_radar.industry_signals", container_type=dict),
+        _RequiredPath("providers.policy_radar.policy_count", kind="int_scalar"),
+        _RequiredPath("providers.macro_hf", container_type=dict),
+        _RequiredPath("providers.macro_hf.metals", container_type=dict),
     ),
     "quant_trading": (
-        "providers",
-        "providers.policy_radar",
-        "providers.policy_radar.policy_count",
-        # The adapter prefers industry_heat.top_industries_by_score and
-        # falls back to policy_radar.top_industries — at least one heat
-        # source must exist; that "any-of" rule is handled specially below.
+        _RequiredPath("providers", container_type=dict),
+        _RequiredPath("providers.policy_radar", container_type=dict),
+        _RequiredPath("providers.policy_radar.policy_count", kind="int_scalar"),
+        # The heat ranking can come from either provider block — that
+        # "any-of" rule lives in REQUIRED_UPSTREAM_ANY_OF below.
     ),
     "index_research": (
-        "verdicts",
+        _RequiredPath("verdicts", container_type=(dict, list)),
     ),
 }
 
-#: Required upstream paths that are intentionally scalar values. All other
-#: required paths are adapter-input containers and must resolve to a non-empty
-#: dict/list, not merely a truthy scalar placeholder.
-REQUIRED_UPSTREAM_SCALAR_PATHS: dict[str, tuple[str, ...]] = {
-    "super_pricing": ("providers.policy_radar.policy_count",),
-    "quant_trading": ("providers.policy_radar.policy_count",),
-}
-
-#: Required upstream containers with a known adapter access pattern. These
-#: catch shape drift inside the broad dict/list container class.
-REQUIRED_UPSTREAM_CONTAINER_TYPES: dict[
-    str, dict[str, type | tuple[type, ...]]
-] = {
-    "super_pricing": {
-        "providers": dict,
-        "providers.policy_radar": dict,
-        "providers.policy_radar.industry_signals": dict,
-        "providers.macro_hf": dict,
-        "providers.macro_hf.metals": dict,
-    },
-    "quant_trading": {
-        "providers": dict,
-        "providers.policy_radar": dict,
-        "providers.industry_heat.top_industries_by_score": list,
-        "providers.policy_radar.top_industries": list,
-        "providers.policy_radar.industry_signals": dict,
-    },
-    "index_research": {"verdicts": (dict, list)},
-}
-
-#: Scalar upstream paths that must be accepted by the adapter's ``int()``
-#: normalization, rather than merely being non-container placeholders.
-REQUIRED_UPSTREAM_INT_SCALAR_PATHS: dict[str, tuple[str, ...]] = {
-    "super_pricing": ("providers.policy_radar.policy_count",),
-    "quant_trading": ("providers.policy_radar.policy_count",),
-}
-
-#: "any-of" path groups: at least ONE path in the tuple must resolve.
-#: Used where the adapter has a documented fallback chain (quant-trading's
-#: heat ranking can come from either provider block).
-REQUIRED_UPSTREAM_ANY_OF: dict[str, tuple[tuple[str, ...], ...]] = {
+#: "any-of" path groups: at least ONE member must resolve to a populated
+#: container. Used where the adapter has a documented fallback chain
+#: (quant-trading's heat ranking can come from either provider block).
+REQUIRED_UPSTREAM_ANY_OF: dict[str, tuple[tuple[_RequiredPath, ...], ...]] = {
     "quant_trading": (
         (
-            "providers.industry_heat.top_industries_by_score",
-            "providers.policy_radar.top_industries",
-            "providers.policy_radar.industry_signals",
+            _RequiredPath(
+                "providers.industry_heat.top_industries_by_score",
+                container_type=list,
+            ),
+            _RequiredPath(
+                "providers.policy_radar.top_industries", container_type=list
+            ),
+            _RequiredPath(
+                "providers.policy_radar.industry_signals", container_type=dict
+            ),
         ),
     ),
 }
@@ -1040,57 +1026,46 @@ def check_required_paths(
         audited += 1
         source_missing: list[str] = []
         invalid_type_paths: dict[str, str] = {}
-        scalar_paths = set(REQUIRED_UPSTREAM_SCALAR_PATHS.get(source_key, ()))
-        int_scalar_paths = set(
-            REQUIRED_UPSTREAM_INT_SCALAR_PATHS.get(source_key, ())
-        )
-        container_types = REQUIRED_UPSTREAM_CONTAINER_TYPES.get(source_key, {})
-        for dotted in required:
-            value = _resolve_nested_path(doc, dotted)
-            require_container = dotted not in scalar_paths
-            container_type = container_types.get(dotted) if require_container else None
+        for spec in required:
+            value = _resolve_nested_path(doc, spec.dotted)
+            if spec.kind == "int_scalar":
+                if not _path_is_int_coercible_scalar(value):
+                    if value is not _MISSING and value is not None:
+                        invalid_type_paths[spec.dotted] = type(value).__name__
+                    source_missing.append(spec.dotted)
+                continue
             if not _path_has_valid_type(
                 value,
-                require_container=require_container,
-                container_type=container_type,
+                require_container=True,
+                container_type=spec.container_type,
             ):
                 if value is not _MISSING and value is not None:
-                    invalid_type_paths[dotted] = type(value).__name__
-                source_missing.append(dotted)
-                continue
-            if (
-                dotted in int_scalar_paths
-                and not _path_is_int_coercible_scalar(value)
-            ):
-                invalid_type_paths[dotted] = type(value).__name__
-                source_missing.append(dotted)
+                    invalid_type_paths[spec.dotted] = type(value).__name__
+                source_missing.append(spec.dotted)
                 continue
             if not _path_is_populated(value):
-                source_missing.append(dotted)
+                source_missing.append(spec.dotted)
 
         # "any-of" groups: the group fails only when ALL of its members
         # are missing — that is a real schema drift the adapter can't
         # absorb via its documented fallback chain.
         for group in REQUIRED_UPSTREAM_ANY_OF.get(source_key, ()):
-            for dotted in group:
-                value = _resolve_nested_path(doc, dotted)
+            group_satisfied = False
+            for spec in group:
+                value = _resolve_nested_path(doc, spec.dotted)
                 if not _path_has_valid_type(
                     value,
                     require_container=True,
-                    container_type=container_types.get(dotted),
+                    container_type=spec.container_type,
                 ):
                     if value is not _MISSING and value is not None:
-                        invalid_type_paths[dotted] = type(value).__name__
-            if not any(
-                _path_has_valid_type(
-                    (value := _resolve_nested_path(doc, dotted)),
-                    require_container=True,
-                    container_type=container_types.get(dotted),
+                        invalid_type_paths[spec.dotted] = type(value).__name__
+                elif _path_is_populated(value):
+                    group_satisfied = True
+            if not group_satisfied:
+                source_missing.append(
+                    " | ".join(s.dotted for s in group) + " (none present)"
                 )
-                and _path_is_populated(value)
-                for dotted in group
-            ):
-                source_missing.append(" | ".join(group) + " (none present)")
 
         entry["status"] = "ok" if not source_missing else "missing_paths"
         entry["missing_paths"] = source_missing
@@ -1742,7 +1717,6 @@ __all__ = [
     "FingerprintEntry",
     "POLICY_IMPACT_FLOOR",
     "REQUIRED_UPSTREAM_ANY_OF",
-    "REQUIRED_UPSTREAM_CONTAINER_TYPES",
     "REQUIRED_UPSTREAM_PATHS",
     "SIGNAL_DENSITY_MIN_RATIO",
     "SignalObservation",

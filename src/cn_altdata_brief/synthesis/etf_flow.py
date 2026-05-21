@@ -6,7 +6,7 @@ import math
 from typing import Any
 
 from cn_altdata_brief.adapters.base import AdapterPayload
-from cn_altdata_brief.render.site import _format_beijing_time
+from cn_altdata_brief.timefmt import format_beijing_time
 
 
 def synthesize_etf_flow(
@@ -112,7 +112,7 @@ def _format_quote_unavailable(snap: dict[str, Any]) -> str:
     # formatter returns the input untouched, preserving the "未知"
     # fallback path.
     generated_at = (
-        _format_beijing_time(raw_generated_at) if raw_generated_at else "未知"
+        format_beijing_time(raw_generated_at) if raw_generated_at else "未知"
     )
     return (
         f"**{snap.get('name', 'ETF 512400')}** ({snap.get('code', '512400')}) · "

@@ -104,7 +104,7 @@ jobs:
           find "${CN_ALTDATA_BRIEF_SOURCE_ROOT}" -name '*_summary.json' -maxdepth 6 || true
 
       - name: Validate upstream public summaries
-        run: uv run cn-altdata-brief validate --source-mode public || test "$?" -eq 1
+        run: uv run cn-altdata-brief validate --source-mode public --strict || test "$?" -eq 1
 
       - name: Generate brief (public-summary mode)
         run: uv run cn-altdata-brief generate --source-mode public --verbose

@@ -265,3 +265,91 @@ def test_render_atom_feed_summary_and_content_have_no_emphasis_markers(
     assert "<![CDATA[<p>**" not in raw
     # Even with underscore-bold input the marker must not leak.
     assert "__新能源" not in raw
+
+
+def test_atom_date_from_brief_date_handles_all_cadences() -> None:
+    """Daily / weekly / monthly stems each map to a distinct Atom stamp."""
+    from cn_altdata_brief.render.rss import _atom_date_from_brief_date
+
+    # Daily — pinned to 09:00 UTC.
+    assert _atom_date_from_brief_date("2026-05-20") == "2026-05-20T09:00:00Z"
+    # Weekly digest — the Friday of that ISO week, 18:00 UTC.
+    assert _atom_date_from_brief_date("2026-W20") == "2026-05-15T18:00:00Z"
+    # Monthly digest — the last day of the month, 17:00 UTC.
+    assert _atom_date_from_brief_date("2026-04") == "2026-04-30T17:00:00Z"
+    # December monthly exercises the month+1 → next-year rollover.
+    assert _atom_date_from_brief_date("2026-12") == "2026-12-31T17:00:00Z"
+    # An unrecognized stem falls back to a valid (never-empty) stamp.
+    fallback = _atom_date_from_brief_date("not-a-stem")
+    assert "T" in fallback and fallback.endswith("Z")
+
+
+def test_render_feed_merges_monthly_digests(tmp_path: Path) -> None:
+    """v0.11 — monthly digests merge into the same RSS feed as dailies/weeklies."""
+    briefs = tmp_path / "briefs"
+    briefs.mkdir()
+    (briefs / "2026-05-15.md").write_text(
+        SAMPLE_BRIEF.replace("2026-05-17", "2026-05-15"), encoding="utf-8"
+    )
+    digests = tmp_path / "digests"
+    digests.mkdir()
+    (digests / "2026-04.md").write_text(
+        "# 上月回顾 2026-04\n\n- **新能源汽车**: monthly takeaway\n", encoding="utf-8"
+    )
+    # December stem too — exercises the month+1 last-day rollover.
+    (digests / "2026-12.md").write_text(
+        "# 上月回顾 2026-12\n\n- **电网**: year-end takeaway\n", encoding="utf-8"
+    )
+    feed_path = tmp_path / "feed.xml"
+    render_feed(
+        briefs_dir=briefs,
+        feed_path=feed_path,
+        digests_dir=digests,
+        site_url="https://example.com",
+    )
+    root = ET.parse(feed_path).getroot()
+    items = root.findall("channel/item")
+    titles = [i.findtext("title") or "" for i in items]
+    assert any("2026-05-15" in t for t in titles)
+    assert any("月报" in t for t in titles)
+    categories = [i.findtext("category") for i in items if i.findtext("category")]
+    assert "monthly-digest" in categories
+    guids = [i.findtext("guid") or "" for i in items]
+    assert any("2026-04" in g for g in guids)
+    assert any("2026-12" in g for g in guids)
+
+
+def test_render_atom_feed_includes_weekly_and_monthly_digests(tmp_path: Path) -> None:
+    """v0.11 — the Atom feed carries weekly and monthly digest entries."""
+    from cn_altdata_brief.render.rss import render_atom_feed
+
+    briefs = tmp_path / "briefs"
+    briefs.mkdir()
+    (briefs / "2026-05-15.md").write_text(
+        SAMPLE_BRIEF.replace("2026-05-17", "2026-05-15"), encoding="utf-8"
+    )
+    digests = tmp_path / "digests"
+    digests.mkdir()
+    (digests / "2026-W20.md").write_text(
+        "# 本周回顾 W20\n\n- **新能源汽车**: weekly takeaway\n", encoding="utf-8"
+    )
+    (digests / "2026-04.md").write_text(
+        "# 上月回顾 2026-04\n\n- **电网**: monthly takeaway\n", encoding="utf-8"
+    )
+    atom_path = tmp_path / "feed.atom"
+    render_atom_feed(
+        briefs_dir=briefs,
+        feed_path=atom_path,
+        digests_dir=digests,
+        site_url="https://example.com",
+    )
+    ns = "{http://www.w3.org/2005/Atom}"
+    root = ET.parse(atom_path).getroot()
+    entries = root.findall(f"{ns}entry")
+    titles = [e.findtext(f"{ns}title") or "" for e in entries]
+    assert any("2026-05-15" in t for t in titles)
+    assert any("周报" in t for t in titles)
+    assert any("月报" in t for t in titles)
+    # Every entry carries a non-empty, Z-suffixed updated timestamp.
+    for entry in entries:
+        assert (entry.findtext(f"{ns}updated") or "").endswith("Z")

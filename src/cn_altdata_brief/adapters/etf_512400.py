@@ -113,6 +113,9 @@ class ETF512400Adapter(AdapterBase):
     # Implementations
     # ------------------------------------------------------------------
 
+    def _cache_probe_path(self) -> Path | None:
+        return self.snapshot_path
+
     def fetch_cached(self) -> AdapterPayload:
         if not self.snapshot_path.exists():
             raise AdapterUnavailable(

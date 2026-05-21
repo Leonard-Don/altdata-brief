@@ -80,6 +80,9 @@ class IndexResearchAdapter(AdapterBase):
     # Implementations
     # ------------------------------------------------------------------
 
+    def _cache_probe_path(self) -> Path | None:
+        return self.table_dir
+
     def fetch_cached(self) -> AdapterPayload:
         verdicts_path = self.table_dir / "cma_hypothesis_verdicts.csv"
         pap_path = self.table_dir / "pap_deviation_report.csv"

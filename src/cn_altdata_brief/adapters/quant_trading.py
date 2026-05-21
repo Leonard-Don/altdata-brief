@@ -96,6 +96,9 @@ class QuantTradingAdapter(AdapterBase):
     # Implementations
     # ------------------------------------------------------------------
 
+    def _cache_probe_path(self) -> Path | None:
+        return self.cache_dir
+
     def fetch_cached(self) -> AdapterPayload:
         policy_path = self.cache_dir / "policy_radar.json"
         if not policy_path.exists():

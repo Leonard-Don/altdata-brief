@@ -13,7 +13,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
-from cn_altdata_brief.render.site import _format_beijing_time
+from cn_altdata_brief.timefmt import format_beijing_time
 
 DEFAULT_TEMPLATE_DIR = Path(__file__).resolve().parents[3] / "templates"
 
@@ -29,7 +29,7 @@ def _env(template_dir: Path) -> Environment:
     # Mirror render/markdown.py so weekly/monthly digest body lines can
     # opt into the Beijing-time formatter. Frontmatter ``generated_at:``
     # stays raw ISO Z for machine readers (RSS/Atom/feed consumers).
-    env.globals["beijing_time"] = _format_beijing_time
+    env.globals["beijing_time"] = format_beijing_time
     return env
 
 

@@ -77,6 +77,9 @@ class SuperPricingAdapter(AdapterBase):
     # Implementations
     # ------------------------------------------------------------------
 
+    def _cache_probe_path(self) -> Path | None:
+        return self.cache_dir
+
     def fetch_cached(self) -> AdapterPayload:
         policy_path = self.cache_dir / "policy_radar.json"
         macro_path = self.cache_dir / "macro_hf.json"

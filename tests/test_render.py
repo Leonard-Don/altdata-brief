@@ -14,7 +14,6 @@ from cn_altdata_brief.adapters import (
     SuperPricingAdapter,
 )
 from cn_altdata_brief.render import (
-    _format_beijing_time,
     render_all_charts,
     render_brief_markdown,
     render_feed,
@@ -27,6 +26,7 @@ from cn_altdata_brief.synthesis import (
     synthesize_observation,
     synthesize_policy,
 )
+from cn_altdata_brief.timefmt import format_beijing_time
 
 
 def _build_context(
@@ -251,27 +251,27 @@ def test_render_strict_undefined_catches_missing_keys(tmp_path: Path) -> None:
 
 def test_format_beijing_time_iso_z_string() -> None:
     # UTC 08:59 → Beijing 16:59, default minute precision + suffix.
-    assert _format_beijing_time("2026-05-19T08:59:36Z") == "2026-05-19 16:59 北京时间"
+    assert format_beijing_time("2026-05-19T08:59:36Z") == "2026-05-19 16:59 北京时间"
 
 
 def test_format_beijing_time_naive_datetime_treated_as_utc() -> None:
     naive = datetime(2026, 5, 19, 8, 59, 36)
-    assert _format_beijing_time(naive) == "2026-05-19 16:59 北京时间"
+    assert format_beijing_time(naive) == "2026-05-19 16:59 北京时间"
 
 
 def test_format_beijing_time_already_beijing_no_double_shift() -> None:
     # ``+08:00`` value stays at its wall-clock minute — no extra +8.
     cn = datetime(2026, 5, 19, 16, 59, 36, tzinfo=timezone(timedelta(hours=8)))
-    assert _format_beijing_time(cn) == "2026-05-19 16:59 北京时间"
+    assert format_beijing_time(cn) == "2026-05-19 16:59 北京时间"
 
 
 def test_format_beijing_time_with_seconds_includes_seconds() -> None:
-    out = _format_beijing_time("2026-05-19T08:59:36Z", with_seconds=True)
+    out = format_beijing_time("2026-05-19T08:59:36Z", with_seconds=True)
     assert out == "2026-05-19 16:59:36 北京时间"
 
 
 def test_format_beijing_time_with_label_false_drops_suffix() -> None:
-    out = _format_beijing_time("2026-05-19T08:59:36Z", with_label=False)
+    out = format_beijing_time("2026-05-19T08:59:36Z", with_label=False)
     assert out == "2026-05-19 16:59"
     assert "北京时间" not in out
 

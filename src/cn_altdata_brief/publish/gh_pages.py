@@ -904,9 +904,9 @@ def _render_index_md(
     # below tracks the same value verbatim — equality is what the
     # client-side refresh script uses to detect updates, so we keep
     # the two strings in lockstep.
-    from cn_altdata_brief.render.site import _format_beijing_time
+    from cn_altdata_brief.timefmt import format_beijing_time
 
-    now = _format_beijing_time(datetime.now(UTC), with_seconds=False)
+    now = format_beijing_time(datetime.now(UTC), with_seconds=False)
     lines: list[str] = [
         "---",
         "layout: default",

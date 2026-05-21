@@ -8,7 +8,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
-from cn_altdata_brief.render.site import _format_beijing_time
+from cn_altdata_brief.timefmt import format_beijing_time
 
 DEFAULT_TEMPLATE_DIR = Path(__file__).resolve().parents[3] / "templates"
 
@@ -53,7 +53,7 @@ def _env(template_dir: Path) -> Environment:
     # readers parse them as ISO 8601 / RFC 3339); the formatter is
     # opt-in per template line so we only convert user-visible body
     # copy and leave the metadata blocks alone.
-    env.globals["beijing_time"] = _format_beijing_time
+    env.globals["beijing_time"] = format_beijing_time
     return env
 
 

@@ -206,27 +206,21 @@ class AdapterBase:
     # ------------------------------------------------------------------
 
     def resolve_source(self) -> SourceResolution:
-        """Inspect which source would be used without actually fetching.
+        """Inspect which source ``fetch`` would use, without fetching.
 
-        v0.4 standardization: every adapter exposes this so the validate
-        command (and any future "doctor" output) can report a uniform
-        per-adapter line — *which* path the adapter resolved to, the
-        file's mtime, and whether fetch would succeed.
-
-        The default implementation handles the common case where the
-        adapter holds three attributes (``live_url``, ``public_summary``,
-        ``cache_dir`` or ``snapshot_path``). Subclasses with unusual
-        layouts may override; the dataclass shape is the contract.
+        Reports a uniform per-adapter line for the ``validate`` command:
+        which path the adapter would resolve to, its mtime, and whether
+        ``fetch`` would succeed. The live → public → cache decision reads
+        the SAME ``config`` / ``live_url`` / ``public_summary`` that
+        :meth:`fetch` dispatches on, so the probe cannot drift from the
+        real resolution; the cache path comes from
+        :meth:`_cache_probe_path`, which each adapter implements.
 
         This method MUST NOT raise — failures collapse to ``mode="missing"``
-        with ``available=False``. The validate layer renders that to the
-        user; raising would short-circuit the report for other adapters.
+        so the validate layer can still report the other adapters.
         """
-        # Live mode wins when explicitly enabled. We don't probe HTTP here
-        # (would be slow); we just declare the intent.
-        cfg = getattr(self, "config", None)
-        allow_live = bool(getattr(cfg, "allow_live", self.allow_live)) and bool(self.live_url)
-        if allow_live:
+        cfg = self.config
+        if cfg.allow_live and self.live_url:
             return SourceResolution(
                 source_name=self.source_name,
                 mode="live",
@@ -236,10 +230,8 @@ class AdapterBase:
                 note=f"live endpoint {self.live_url}",
             )
 
-        prefer_public = cfg is None or getattr(cfg, "prefer_public", True)
-        allow_cache = cfg is None or getattr(cfg, "allow_cache", True)
-        public_path = getattr(self, "public_summary", None)
-        if prefer_public and isinstance(public_path, Path) and public_path.exists():
+        public_path = self.public_summary
+        if cfg.prefer_public and public_path.exists():
             return SourceResolution(
                 source_name=self.source_name,
                 mode="public",
@@ -248,33 +240,24 @@ class AdapterBase:
                 available=True,
             )
 
-        cache_candidates: list[Path] = []
-        for attr in ("snapshot_path", "cache_dir", "table_dir"):
-            value = getattr(self, attr, None)
-            if isinstance(value, Path):
-                cache_candidates.append(value)
-        cache_present = any(
-            p.is_file() or (p.is_dir() and any(p.iterdir()))
-            for p in cache_candidates
-            if p.exists()
+        cache_path = self._cache_probe_path()
+        cache_present = cache_path is not None and (
+            cache_path.is_file()
+            or (cache_path.is_dir() and any(cache_path.iterdir()))
         )
-        if cache_present and allow_cache:
-            existing = next(p for p in cache_candidates if p.exists())
+        if cache_present and cfg.allow_cache:
             return SourceResolution(
                 source_name=self.source_name,
                 mode="cache",
-                path=existing,
-                mtime_iso=self._mtime_iso(existing),
+                path=cache_path,
+                mtime_iso=self._mtime_iso(cache_path),
                 available=True,
             )
 
-        # Nothing resolved — but if public summary exists yet caller
-        # forbade public (cache_only) AND we still have no cache, we land
-        # here. Use a hint when we know the public path exists.
         note = None
-        if isinstance(public_path, Path) and public_path.exists() and not prefer_public:
+        if public_path.exists() and not cfg.prefer_public:
             note = "public summary exists but preference excludes it"
-        elif not prefer_public and not allow_cache:
+        elif not cfg.prefer_public and not cfg.allow_cache:
             note = "neither public nor cache permitted by current preference"
         return SourceResolution(
             source_name=self.source_name,
@@ -284,6 +267,14 @@ class AdapterBase:
             available=False,
             note=note,
         )
+
+    def _cache_probe_path(self) -> Path | None:
+        """Representative on-disk cache path for :meth:`resolve_source`.
+
+        ``None`` means the adapter has no cache tier. Adapters override
+        this with their cache directory or snapshot file.
+        """
+        return None
 
     @staticmethod
     def _mtime_iso(path: Path) -> str | None:
