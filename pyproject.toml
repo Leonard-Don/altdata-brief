@@ -9,7 +9,7 @@ description = "Daily research brief synthesizing alt-data signals from 4 public 
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
-authors = [{ name = "Tang Zihan" }]
+authors = [{ name = "Leonard-Don" }]
 keywords = ["alt-data", "research-brief", "quantitative", "china-equity", "newsletter"]
 dependencies = [
     "jinja2>=3.1",

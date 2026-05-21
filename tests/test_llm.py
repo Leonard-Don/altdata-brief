@@ -6,7 +6,16 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from cn_altdata_brief.llm import RephraseResult, validate_rephrase
+import pytest
+
+from cn_altdata_brief.llm import (
+    RephraseResult,
+    rephrase_observation,
+    validate_rephrase,
+)
+from cn_altdata_brief.llm import (
+    anthropic_client as ac_mod,
+)
 from cn_altdata_brief.llm.usage import aggregate_usage, log_usage
 
 
@@ -167,3 +176,179 @@ def test_aggregate_usage_tolerates_malformed_partial_records_without_text_leak(
     assert "status private phrase" not in rendered
     assert "今日核心信号" not in rendered
     assert "private prose" not in rendered
+
+
+# ---------------------------------------------------------------------------
+# Fake-SDK harness for the rephrase_observation live path
+#
+# These tests never hit the real Anthropic API: they monkey-patch
+# anthropic_client._sdk_module (the same shim production code probes) to
+# inject a fake SDK, and set a dummy ANTHROPIC_API_KEY.
+# ---------------------------------------------------------------------------
+
+
+RAW_OBSERVATION = (
+    "今日核心信号是 **新能源汽车** 政策转弱，avg_impact=-0.388。\n"
+    "近 7 日该信号与 ETF 资金面方向一致。\n"
+    "若该信号延续，需留意 avg_impact=-0.388 的方向。"
+)
+
+
+class _FakeMessage:
+    """Minimal stand-in for an Anthropic ``Message`` response.
+
+    rephrase_observation only reads ``.content[*].text`` and
+    ``.usage.*_tokens``, so dict-shaped blocks are sufficient.
+    """
+
+    def __init__(self, text: str, input_tokens: int = 120, output_tokens: int = 60) -> None:
+        self.content = [{"text": text}]
+        self.usage = {"input_tokens": input_tokens, "output_tokens": output_tokens}
+
+
+class _FakeMessages:
+    def __init__(self, parent: _FakeAnthropicClient) -> None:
+        self._parent = parent
+
+    def create(self, **kwargs: object) -> _FakeMessage:
+        self._parent.calls.append(kwargs)
+        if self._parent.raise_exc is not None:
+            raise self._parent.raise_exc
+        return self._parent.response
+
+
+class _FakeAnthropicClient:
+    def __init__(
+        self,
+        response_text: str,
+        *,
+        raise_exc: Exception | None = None,
+        input_tokens: int = 120,
+        output_tokens: int = 60,
+    ) -> None:
+        self.response = _FakeMessage(response_text, input_tokens, output_tokens)
+        self.raise_exc = raise_exc
+        self.calls: list[dict[str, object]] = []
+        self.messages = _FakeMessages(self)
+
+
+class _FakeAnthropicSdk:
+    """The ``anthropic`` module surface rephrase_observation touches."""
+
+    def __init__(self, response_text: str, **client_kwargs: object) -> None:
+        self._response_text = response_text
+        self._client_kwargs = client_kwargs
+        self.last_client: _FakeAnthropicClient | None = None
+
+    def Anthropic(self, **kwargs: object) -> _FakeAnthropicClient:  # noqa: N802 (SDK shape)
+        self.last_client = _FakeAnthropicClient(self._response_text, **self._client_kwargs)
+        return self.last_client
+
+
+@pytest.fixture
+def fake_rephrase_sdk(monkeypatch: pytest.MonkeyPatch):
+    """Install a fake anthropic SDK + API key. Returns a setter."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+
+    def _install(response_text: str, **client_kwargs: object) -> _FakeAnthropicSdk:
+        sdk = _FakeAnthropicSdk(response_text, **client_kwargs)
+        monkeypatch.setattr(ac_mod, "_sdk_module", lambda: sdk)
+        return sdk
+
+    return _install
+
+
+def test_rephrase_observation_ok_path(fake_rephrase_sdk) -> None:
+    polished = (
+        "今日最值得留意的是新能源汽车政策转弱，avg_impact=-0.388，"
+        "近期与 ETF 资金面方向一致。"
+    )
+    sdk = fake_rephrase_sdk(polished, input_tokens=140, output_tokens=70)
+
+    result = rephrase_observation(
+        RAW_OBSERVATION,
+        {"date": "2026-05-17", "industries": ["新能源汽车"]},
+        model="fake-model",
+    )
+
+    assert result.ok
+    assert result.status == "ok"
+    assert result.polished_text == polished
+    assert result.input_tokens == 140
+    assert result.output_tokens == 70
+    assert result.llm_model_used == "fake-model"
+    # The SDK was actually invoked with our model + user message.
+    assert sdk.last_client is not None
+    create_kwargs = sdk.last_client.calls[0]
+    assert create_kwargs["model"] == "fake-model"
+    assert "新能源汽车" in create_kwargs["messages"][0]["content"]
+
+
+def test_rephrase_observation_dropped_number_falls_back(fake_rephrase_sdk) -> None:
+    # The polish drops "-0.388" — the numeric guard must reject it.
+    fake_rephrase_sdk("今日最值得留意的是新能源汽车政策转弱。")
+
+    result = rephrase_observation(
+        RAW_OBSERVATION, {"industries": ["新能源汽车"]}, model="fake-model"
+    )
+
+    assert not result.ok
+    assert result.status == "validation_failed"
+    assert result.polished_text == RAW_OBSERVATION
+    assert result.note is not None and "numbers missing" in result.note
+
+
+def test_rephrase_observation_overlong_polish_falls_back(fake_rephrase_sdk) -> None:
+    overlong = "新能源汽车 avg_impact=-0.388 " + "信号延续" * ac_mod.MAX_POLISHED_CHARS
+    fake_rephrase_sdk(overlong)
+
+    result = rephrase_observation(
+        RAW_OBSERVATION, {"industries": ["新能源汽车"]}, model="fake-model"
+    )
+
+    assert result.status == "too_long"
+    assert result.polished_text == RAW_OBSERVATION
+
+
+def test_rephrase_observation_api_exception_falls_back(fake_rephrase_sdk) -> None:
+    fake_rephrase_sdk("unused", raise_exc=RuntimeError("rate limited"))
+
+    result = rephrase_observation(
+        RAW_OBSERVATION, {"industries": ["新能源汽车"]}, model="fake-model"
+    )
+
+    assert result.status == "api_error"
+    assert result.polished_text == RAW_OBSERVATION
+    assert result.note is not None and "RuntimeError" in result.note
+
+
+def test_rephrase_observation_empty_response_falls_back(fake_rephrase_sdk) -> None:
+    fake_rephrase_sdk("")
+
+    result = rephrase_observation(
+        RAW_OBSERVATION, {"industries": ["新能源汽车"]}, model="fake-model"
+    )
+
+    assert result.status == "api_error"
+    assert result.polished_text == RAW_OBSERVATION
+    assert result.note == "empty response from model"
+
+
+def test_rephrase_observation_sdk_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ac_mod, "_sdk_module", lambda: None)
+
+    result = rephrase_observation(RAW_OBSERVATION, model="fake-model")
+
+    assert result.status == "sdk_missing"
+    assert result.polished_text == RAW_OBSERVATION
+
+
+def test_rephrase_observation_api_key_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    # Pretend the SDK is installed so we reach the api_key_missing branch.
+    monkeypatch.setattr(ac_mod, "_sdk_module", lambda: object())
+
+    result = rephrase_observation(RAW_OBSERVATION, model="fake-model")
+
+    assert result.status == "api_key_missing"
+    assert result.polished_text == RAW_OBSERVATION

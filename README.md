@@ -104,6 +104,7 @@ YieldWise / Android 等其它实验项目暂不进入当前 4-source brief surfa
 | **v0.7** | 本地显式开启的 LLM 改写「本日观察」段；原文保留 + usage 记录 + 校验失败回退 | ✅ 完成 |
 | **v0.8** | **双语 CN+EN 简报（LLM 翻译 + 数字/行业名校验回退）** | ✅ 完成 |
 | **v0.9** | 每周五 18:00 本周回顾（aggregate 5 份日报为 themes/inflections/forecast） | ✅ 完成 |
+| **v0.10** | Atom 1.0 feed + Open Graph 社交预览元数据 + 首页图表缩略图与订阅/分享入口 | ✅ 完成 |
 | **v0.11** | **每月 1 日 17:00 上月回顾（aggregate ~20 份日报 + 4 份周报为 sustained themes / reversals / ETF MoM）** | ✅ 当前 |
 | **v1.0** | 付费墙上线 + Weekly Deep-Dive 实战 | 计划中 |
 

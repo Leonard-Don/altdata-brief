@@ -42,9 +42,9 @@ from typing import Literal
 
 #: Root directory where sibling source-repo checkouts live. Override via
 #: ``CN_ALTDATA_BRIEF_SOURCE_ROOT`` for CI workspaces.
-DEFAULT_SOURCE_REPOS_ROOT = Path(os.environ.get(
-    "CN_ALTDATA_BRIEF_SOURCE_ROOT", "/Users/leonardodon"
-))
+DEFAULT_SOURCE_REPOS_ROOT = Path(
+    os.environ.get("CN_ALTDATA_BRIEF_SOURCE_ROOT") or Path.home()
+)
 
 #: Sibling checkouts each adapter expects. Names match
 #: ``adapters/<key>.py``'s source-project identifier.

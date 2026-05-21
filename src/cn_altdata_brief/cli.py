@@ -32,7 +32,7 @@ from zoneinfo import ZoneInfo
 
 from cn_altdata_brief import __version__
 from cn_altdata_brief.adapters import build_default_adapters
-from cn_altdata_brief.adapters.base import AdapterPayload, AdapterUnavailable
+from cn_altdata_brief.adapters.base import AdapterError, AdapterPayload
 from cn_altdata_brief.config import (
     load_source_config,
     source_mode_to_kwargs,
@@ -592,7 +592,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
                 mode,
                 payloads[name].live,
             )
-        except AdapterUnavailable as exc:
+        except AdapterError as exc:
             logger.warning("adapter %s unavailable: %s", name, exc)
             payloads[name] = None
             if cfg.public_required:
@@ -876,7 +876,7 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     for name, adapter in adapters.items():
         try:
             payloads[name] = adapter.fetch()
-        except AdapterUnavailable as exc:
+        except AdapterError as exc:
             logger.warning("validate: adapter %s unavailable: %s", name, exc)
             payloads[name] = None
 
@@ -1180,8 +1180,6 @@ def _relative_to(briefs_dir: Path, chart_path: Path) -> str:
     `../charts/YYYY-MM-DD/foo.png`.
     """
     try:
-        common = Path(*chart_path.parts[: len(briefs_dir.parts)])  # naive trim
-        _ = common
         return str(Path("..") / chart_path.relative_to(briefs_dir.parent))
     except ValueError:
         return str(chart_path)
@@ -1255,7 +1253,7 @@ def _publish_preflight_checks() -> list[Any]:
     for name, adapter in build_default_adapters(config=cfg).items():
         try:
             payloads[name] = adapter.fetch()
-        except AdapterUnavailable as exc:
+        except AdapterError as exc:
             logger.warning("publish preflight: adapter %s unavailable: %s", name, exc)
             payloads[name] = None
     return run_all_checks(payloads)

@@ -183,6 +183,46 @@ def test_cli_generate_rejects_invalid_languages_without_outputs(
     assert not (tmp_path / "feed.atom").exists()
 
 
+def test_cli_generate_degrades_on_corrupt_public_summary(
+    patched_default_paths: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A corrupt upstream public summary degrades that one section to a
+    "数据缺失" note instead of aborting the whole brief. read_json raises
+    AdapterError (not AdapterUnavailable) on malformed JSON, so the CLI
+    adapter loop must catch the broader AdapterError.
+    """
+    corrupt = tmp_path / "corrupt_summary.json"
+    corrupt.write_text("{not valid json", encoding="utf-8")
+    monkeypatch.setattr(sp_mod, "DEFAULT_PUBLIC_SUMMARY", corrupt)
+
+    briefs = tmp_path / "briefs"
+    code = main(
+        [
+            "generate",
+            "--date",
+            "2026-05-17",
+            "--briefs-dir",
+            str(briefs),
+            "--charts-dir",
+            str(tmp_path / "charts"),
+            "--no-charts",
+            "--no-index",
+            "--no-feed",
+        ]
+    )
+
+    assert code == 0
+    brief_path = briefs / "2026-05-17.md"
+    assert brief_path.exists()
+    # The super-pricing-backed sections degrade gracefully; the brief itself
+    # is still produced because the other sources resolved fine.
+    assert "数据缺失" in brief_path.read_text(encoding="utf-8")
+    assert "OK" in capsys.readouterr().out
+
+
 def test_cli_generate_with_llm_uses_validated_polish(
     patched_default_paths: None,
     tmp_path: Path,
