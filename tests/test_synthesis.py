@@ -194,6 +194,37 @@ def test_etf_flow_tolerates_string_typed_price_and_unit() -> None:
     assert "单位净值 2.0081" in text
 
 
+def test_etf_flow_adjacent_row_tolerates_missing_heat_score() -> None:
+    """An adjacent-industry row missing heat_score must not crash rendering —
+    a malformed upstream quant row should degrade, not abort the brief.
+    """
+    etf_payload = AdapterPayload(
+        source="ETF-512400",
+        fetched_at="2026-05-19T00:00:00Z",
+        cache_path=None,
+        live=False,
+        data={
+            "name": "有色金属ETF南方",
+            "code": "512400",
+            "price": 2.207,
+            "nav": {"date": "2026-05-18", "unit": 2.0081},
+            "source_health": {"verdict": "正常"},
+            "commodity_drivers": {},
+        },
+    )
+    quant_payload = AdapterPayload(
+        source="quant-trading-system",
+        fetched_at="2026-05-19T00:00:00Z",
+        cache_path=None,
+        live=False,
+        # Matches an adjacency keyword via `industry`, but carries no heat_score.
+        data={"industries": [{"industry": "有色金属"}]},
+    )
+    result = synthesize_etf_flow(etf_payload, quant_payload)
+    assert result["available"] is True
+    assert "有色金属" in " ".join(result["bullets"])
+
+
 # ---- industry -------------------------------------------------------------
 
 
@@ -264,3 +295,19 @@ def test_observation_no_pap_changes_reports_stability(tmp_path: Path) -> None:
     assert result["available"] is True
     text = " ".join(result["sentences"])
     assert "保持稳定" in text
+
+
+def test_observation_industry_candidate_tolerates_missing_industry_key() -> None:
+    """A heat-ranked top row missing the industry key must not crash the
+    brief — _industry_candidate should fall back to a placeholder name.
+    """
+    quant_payload = AdapterPayload(
+        source="quant-trading-system",
+        fetched_at="2026-05-19T00:00:00Z",
+        cache_path=None,
+        live=False,
+        data={"industries": [{"heat_score": 0.9, "policy_signal": "neutral"}]},
+    )
+    result = synthesize_observation(None, quant_payload, None, None)
+    assert result["available"] is True
+    assert len(result["sentences"]) == 3

@@ -165,6 +165,21 @@ def test_render_all_charts_skips_when_no_data(tmp_path: Path) -> None:
     assert out == {}
 
 
+def test_render_all_charts_tolerates_missing_row_keys(tmp_path: Path) -> None:
+    """Chart rows missing industry / avg_impact must not raise KeyError —
+    a malformed upstream row should render with placeholders, not abort.
+    """
+    out = render_all_charts(
+        output_dir=tmp_path,
+        policy_top=[{"mentions": 3}, {"industry": "电网", "avg_impact": 0.1}],
+        metals=None,
+        industry_top=[{"policy_signal": "neutral"}, {"industry": "有色金属", "heat_score": 0.4}],
+        nav_trend=None,
+    )
+    assert out["policy"].exists()
+    assert out["industry"].exists()
+
+
 def test_render_site_index_empty_folder(tmp_path: Path) -> None:
     path = render_site_index(tmp_path)
     text = path.read_text(encoding="utf-8")

@@ -264,8 +264,9 @@ def _industry_candidate(payload: AdapterPayload) -> _Candidate | None:
     if heat < 0.1:
         return None
 
+    name = top.get("industry", "未知")
     framing = (
-        f"今日核心信号是行业热度榜首 **{top['industry']}**"
+        f"今日核心信号是行业热度榜首 **{name}**"
         f"（热度={heat:.3f}，政策口径={_SIGNAL_LABELS.get(str(top.get('policy_signal')), '中性')}）。"
     )
     intensity = describe_intensity(heat, BASELINE_INDUSTRY_HEAT_7D)
@@ -274,7 +275,7 @@ def _industry_candidate(payload: AdapterPayload) -> _Candidate | None:
         f"今日热度{intensity}，关注政策叠加是否同向放大。"
     )
     action = (
-        f"若该信号延续 {SIGNAL_PERSISTENCE_DAYS} 日，可重点观察 **{top['industry']}** "
+        f"若该信号延续 {SIGNAL_PERSISTENCE_DAYS} 日，可重点观察 **{name}** "
         "及其上下游 ETF 的资金外溢方向。"
     )
     return _Candidate(

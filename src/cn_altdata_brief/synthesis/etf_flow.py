@@ -43,7 +43,7 @@ def synthesize_etf_flow(
     adjacent = _adjacent_industries(quant_payload)
     if adjacent:
         bullets.append(
-            "邻近行业热度：" + " · ".join(f"{row['industry']} ({row['heat_score']:.2f})" for row in adjacent)
+            "邻近行业热度：" + " · ".join(f"{row.get('industry', '未知')} ({float(row.get('heat_score', 0.0) or 0.0):.2f})" for row in adjacent)
         )
 
     sources = [etf_payload.cache_label]
