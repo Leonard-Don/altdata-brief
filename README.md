@@ -105,7 +105,8 @@ YieldWise / Android 等其它实验项目暂不进入当前 4-source brief surfa
 | **v0.8** | **双语 CN+EN 简报（LLM 翻译 + 数字/行业名校验回退）** | ✅ 完成 |
 | **v0.9** | 每周五 18:00 本周回顾（aggregate 5 份日报为 themes/inflections/forecast） | ✅ 完成 |
 | **v0.10** | Atom 1.0 feed + Open Graph 社交预览元数据 + 首页图表缩略图与订阅/分享入口 | ✅ 完成 |
-| **v0.11** | **每月 1 日 17:00 上月回顾（aggregate ~20 份日报 + 4 份周报为 sustained themes / reversals / ETF MoM）** | ✅ 当前 |
+| **v0.11** | **每月 1 日 17:00 上月回顾（aggregate ~20 份日报 + 4 份周报为 sustained themes / reversals / ETF MoM）** | ✅ 完成 |
+| **v0.12** | **内容质量校验 `validate --strict`（指纹新鲜度 / 信号密度 / 跨源一致性 / schema 回归 / 占位符 / 时序一致性 / 必需上游路径）+ 上游 schema 版本闸门** | ✅ 当前 |
 | **v1.0** | 付费墙上线 + Weekly Deep-Dive 实战 | 计划中 |
 
 ## 8. 快速开始 / Quickstart
@@ -120,7 +121,7 @@ uv run cn-altdata-brief generate --source-mode public  # CI mode, public summari
 ```
 
 生成结果落在 `output/briefs/YYYY-MM-DD.md`、`output/charts/YYYY-MM-DD/*.png`、`output/feed.xml` 与 `output/feed.atom`。周报/月报落在 `output/digests/` 并由同一个 publisher 发布。
-发布/CI 场景请使用 `uv run cn-altdata-brief validate --fail-on-warn`，把 WARN 也升级为阻断。
+发布/CI 场景请使用 `uv run cn-altdata-brief validate --strict --fail-on-warn`：`--strict` 额外跑内容质量校验（指纹新鲜度 / 信号密度 / 跨源一致性 / schema 回归 / 占位符 / 时序一致性 / 必需上游路径），`--fail-on-warn` 把 WARN 也升级为阻断。每日 GitHub Actions 工作流已默认带 `--strict`。
 
 ### 可选 LLM 改写 / Optional LLM rephrase
 
