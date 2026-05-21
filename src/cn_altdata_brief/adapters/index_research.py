@@ -30,7 +30,6 @@ from cn_altdata_brief.adapters.schema import SchemaContract, resolve_schema_vers
 from cn_altdata_brief.config import (
     SOURCE_REPO_DIRS,
     SourceConfig,
-    load_source_config,
     public_summary_path,
 )
 
@@ -70,40 +69,12 @@ class IndexResearchAdapter(AdapterBase):
         self.public_summary = (
             Path(public_summary) if public_summary else DEFAULT_PUBLIC_SUMMARY
         )
-        preference = (
-            "cache_only"
-            if (table_dir is not None or figure_dir is not None) and public_summary is None
-            else None
-        )
-        self.config = config if config is not None else load_source_config(
-            preference=preference,
+        self.config = self._resolve_config(
+            config,
+            cache_explicitly_set=table_dir is not None or figure_dir is not None,
+            public_summary_explicitly_set=public_summary is not None,
             allow_live=allow_live,
         )
-
-    # ------------------------------------------------------------------
-    # Resolution dispatch
-    # ------------------------------------------------------------------
-
-    def fetch(self) -> AdapterPayload:
-        cfg = self.config
-
-        # 1. Live is not implemented for this adapter; skip to step 2.
-
-        # 2. Public summary if preferred AND available.
-        if cfg.prefer_public and self.public_summary.exists():
-            try:
-                return self._load_from_public_summary()
-            except AdapterUnavailable:
-                pass
-
-        # 3. CSV cache, unless caller forbids it.
-        if not cfg.allow_cache:
-            raise AdapterUnavailable(
-                f"index-inclusion-research public summary missing at "
-                f"{self.public_summary} and PUBLIC_SUMMARY_PREFERENCE=public_only "
-                "forbids cache fallback"
-            )
-        return self.fetch_cached()
 
     # ------------------------------------------------------------------
     # Implementations

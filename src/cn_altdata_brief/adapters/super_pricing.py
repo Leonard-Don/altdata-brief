@@ -27,7 +27,6 @@ from cn_altdata_brief.adapters.schema import SchemaContract, resolve_schema_vers
 from cn_altdata_brief.config import (
     SOURCE_REPO_DIRS,
     SourceConfig,
-    load_source_config,
     public_summary_path,
 )
 
@@ -67,44 +66,12 @@ class SuperPricingAdapter(AdapterBase):
         self.public_summary = (
             Path(public_summary) if public_summary else DEFAULT_PUBLIC_SUMMARY
         )
-        preference = "cache_only" if cache_dir is not None and public_summary is None else None
-        self.config = config if config is not None else load_source_config(
-            preference=preference,
+        self.config = self._resolve_config(
+            config,
+            cache_explicitly_set=cache_dir is not None,
+            public_summary_explicitly_set=public_summary is not None,
             allow_live=allow_live,
         )
-
-    # ------------------------------------------------------------------
-    # Resolution dispatch
-    # ------------------------------------------------------------------
-
-    def fetch(self) -> AdapterPayload:
-        """Override base: route through preference-aware resolution."""
-        cfg = self.config
-        # 1. Live mode (only when explicitly enabled).
-        if cfg.allow_live and self.live_url:
-            try:
-                return self.fetch_live()
-            except AdapterUnavailable:
-                pass  # fall through
-
-        # 2. Public summary, if preferred AND available.
-        public_used: AdapterPayload | None = None
-        if cfg.prefer_public and self.public_summary.exists():
-            try:
-                public_used = self._load_from_public_summary()
-            except AdapterUnavailable:
-                public_used = None
-
-        if public_used is not None:
-            return public_used
-
-        # 3. Cache JSON, unless caller forbids it.
-        if not cfg.allow_cache:
-            raise AdapterUnavailable(
-                f"super-pricing public summary missing at {self.public_summary} "
-                "and PUBLIC_SUMMARY_PREFERENCE=public_only forbids cache fallback"
-            )
-        return self.fetch_cached()
 
     # ------------------------------------------------------------------
     # Implementations

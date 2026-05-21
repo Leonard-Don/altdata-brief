@@ -12,6 +12,8 @@ from typing import Any
 
 import requests
 
+from cn_altdata_brief.config import SourceConfig, load_source_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -119,16 +121,75 @@ class AdapterBase:
             allow_live = os.environ.get("CN_ALTDATA_BRIEF_LIVE", "0") == "1"
         self.allow_live = allow_live
 
+    def _resolve_config(
+        self,
+        config: SourceConfig | None,
+        *,
+        cache_explicitly_set: bool,
+        public_summary_explicitly_set: bool,
+        allow_live: bool | None,
+    ) -> SourceConfig:
+        """Return ``config`` if given, else derive one from constructor args.
+
+        Subclass ``__init__``s call this instead of hand-rolling the
+        ``load_source_config`` call. When the caller passed an explicit
+        cache path but no public summary, the preference defaults to
+        ``cache_only`` so ``Adapter(cache_dir=...)`` reads the cache
+        directly (the long-standing test-construction shortcut).
+        """
+        if config is not None:
+            return config
+        preference = (
+            "cache_only"
+            if cache_explicitly_set and not public_summary_explicitly_set
+            else None
+        )
+        return load_source_config(preference=preference, allow_live=allow_live)
+
     # -- public API ----------------------------------------------------------
 
     def fetch(self) -> AdapterPayload:
-        """Return a payload, preferring live mode when enabled."""
-        if self.allow_live and self.live_url:
+        """Resolve a payload via the live → public → cache preference order.
+
+        The dispatch is shared by every adapter. Subclasses supply the
+        data sources — :meth:`fetch_live`, :meth:`_load_from_public_summary`,
+        :meth:`fetch_cached` — plus the ``config``, ``public_summary`` and
+        ``live_url`` attributes set in their ``__init__``; they do not
+        override ``fetch`` itself.
+
+        ``AdapterUnavailable`` from the live or public step is swallowed
+        so resolution falls through to the next source. Any other error
+        (corrupt JSON, schema drift) propagates so the failure stays loud.
+        """
+        cfg = self.config
+        if cfg.allow_live and self.live_url:
             try:
                 return self.fetch_live()
             except AdapterUnavailable as exc:
-                logger.warning("%s live fetch failed (%s); falling back to cache", self.source_name, exc)
+                logger.warning(
+                    "%s live fetch failed (%s); falling back", self.source_name, exc
+                )
+        if cfg.prefer_public and self.public_summary.exists():
+            try:
+                return self._load_from_public_summary()
+            except AdapterUnavailable as exc:
+                logger.info(
+                    "%s public summary unavailable (%s); falling back to cache",
+                    self.source_name,
+                    exc,
+                )
+        if not cfg.allow_cache:
+            raise AdapterUnavailable(self._public_only_missing_note())
         return self.fetch_cached()
+
+    def _public_only_missing_note(self) -> str:
+        """Message for the ``AdapterUnavailable`` raised when public-only
+        mode finds no summary. Overridable for a source-specific hint.
+        """
+        return (
+            f"{self.source_name}: public summary missing at "
+            f"{self.public_summary}; source-mode=public forbids cache fallback"
+        )
 
     def fetch_cached(self) -> AdapterPayload:  # pragma: no cover - abstract
         raise NotImplementedError

@@ -42,7 +42,6 @@ from cn_altdata_brief.adapters.schema import SchemaContract, resolve_schema_vers
 from cn_altdata_brief.config import (
     SOURCE_REPO_DIRS,
     SourceConfig,
-    load_source_config,
     public_summary_path,
 )
 
@@ -96,38 +95,19 @@ class ETF512400Adapter(AdapterBase):
             Path(public_summary) if public_summary
             else (self.snapshot_path if snapshot_path else DEFAULT_PUBLIC_SUMMARY)
         )
-        preference = "cache_only" if snapshot_path is not None and public_summary is None else None
-        self.config = config if config is not None else load_source_config(
-            preference=preference,
+        self.config = self._resolve_config(
+            config,
+            cache_explicitly_set=snapshot_path is not None,
+            public_summary_explicitly_set=public_summary is not None,
             allow_live=allow_live,
         )
 
-    # ------------------------------------------------------------------
-    # Resolution dispatch
-    # ------------------------------------------------------------------
-
-    def fetch(self) -> AdapterPayload:
-        """Public-by-default: same file regardless of preference.
-
-        The ``--source-mode public`` path still raises ``AdapterUnavailable``
-        when the snapshot file is missing — that's the validate-time
-        signal the JS app needs a refresh.
-        """
-        cfg = self.config
-
-        # Public summary preferred AND available — the common path.
-        if cfg.prefer_public and self.public_summary.exists():
-            return self._load_from_public_summary()
-
-        # public_only and the file is missing: fail fast with a clear note.
-        if not cfg.allow_cache:
-            raise AdapterUnavailable(
-                f"ETF 512400 liveSnapshot.json missing at {self.public_summary}; "
-                "this source is public-by-default — run `npm run refresh` "
-                "upstream so the snapshot gets regenerated (and committed)."
-            )
-
-        return self.fetch_cached()
+    def _public_only_missing_note(self) -> str:
+        return (
+            f"ETF 512400 liveSnapshot.json missing at {self.public_summary}; "
+            "this source is public-by-default — run `npm run refresh` "
+            "upstream so the snapshot gets regenerated (and committed)."
+        )
 
     # ------------------------------------------------------------------
     # Implementations
