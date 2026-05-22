@@ -12,7 +12,7 @@
 `altdata-brief` 是一个面向多市场的另类数据研究简报引擎，
 当前每个交易日自动合成 4 个已公开摘要/快照数据源的真实信号。它是一份**可订阅、可引用、可复现**的 multi-market alt-data 视角；中国 A 股只是第一组 source pack，不再是产品边界。
 
-`altdata-brief` produces deterministic research briefs over multi-market alt-data — currently synthesized from four public-source adapters I maintain. The goal is content-as-distribution: a reusable publishing surface for source packs across markets.
+`altdata-brief` produces deterministic research briefs over multi-market alt-data — currently synthesized from four public-source adapters I maintain. The goal is a reusable research-automation surface for source packs across markets.
 
 ---
 
@@ -34,18 +34,18 @@
 
 ## 2. 为什么有它 / Why it exists
 
-中文金融内容里，**主观评论是过剩的、可复现的数据视角是稀缺的**。我自己跑的量化工具已经能吐出 public-summary JSON / public snapshot，但它们如果只留在各自仓库里，就很难被读者连续消费。
+金融研究里，**主观评论是过剩的、可复现的数据视角是稀缺的**。我自己跑的量化工具已经能吐出 public-summary JSON / public snapshot，但它们如果只留在各自仓库里，就很难被连续比较、回放和审计。
 
 `altdata-brief` 目前把 4 个公开可读的数据面拼成一份每日刊：
 
-- 对**读者**：免费拿到一份来源可查的 alt-data 速报，不必再听"专家说"
-- 对**我**：把分散的项目串成一个内容产品线，是付费订阅的 v0，也是外包询盘的展示作品
+- 对**研究流程**：把分散信号汇总成一份可版本化、可复现、可回放的记录
+- 对**上游项目**：把 public summary 的接口契约跑通，持续暴露 schema、 freshness 和 source-health 问题
 
 ## 3. 一份简报里有什么 / What's inside a daily brief
 
 [点开示例 →](docs/sample_brief.md)
 
-简报使用 Markdown 输出，可直接发布到 GitHub Pages / Substack / 微信公众号。每段末尾附 `**Sources:**` 标注上游项目 + cache 文件名 + 时间戳，便于核查。
+简报使用 Markdown 输出，可保存为本地研究归档，也可发布到 GitHub Pages / RSS。每段末尾附 `**Sources:**` 标注上游项目 + cache 文件名 + 时间戳，便于核查。
 
 样例片段（来自 `docs/sample_brief.md`）：
 
@@ -61,35 +61,31 @@
 
 每段配 1 张 matplotlib 图（与 [index-inclusion-research forest plot](https://github.com/Leonard-Don/index-inclusion-research) 同款风格）。
 
-## 4. 数据源 = 我的项目组合 / The data sources are my portfolio
+## 4. 当前数据源 / Current source pack
 
-`altdata-brief` **不持有任何金融数据**——它只读取上游仓库已经公开的 summary/snapshot 文件。这等同于把整套工具栈里适合公开展示的部分展开给读者看：
+`altdata-brief` **不持有任何金融数据**——它只读取上游仓库已经公开的 summary/snapshot 文件。当前 source pack 偏中国权益市场；项目名已经松绑为 multi-market，是为了后续接入其它市场或资产类别时不再改产品边界。
 
-| 项目 | 角色 | 我的另一个 GitHub repo |
+| 项目 | 角色 | 上游 GitHub repo |
 |---|---|---|
 | `super-pricing-system` | 政策雷达 + 宏观高频 | `Leonard-Don/super-pricing-system` |
 | `quant-trading-system` | 行业热度 + 政策叠加 | `Leonard-Don/quant-trading-system` |
 | `index-inclusion-research` | CMA 7 条假说裁决 + PAP guard | `Leonard-Don/index-inclusion-research` |
 | `ETF 512400` | 非铁金属 ETF 实时快照（public snapshot） | `Leonard-Don/ETF-512400` |
 
-YieldWise / Android 等其它实验项目暂不进入当前 4-source brief surface，避免把未公开或未收口的信号混进日报。读者从一份简报顺藤摸瓜，能看到这些公开数据源的当前状态——这是"内容即分发"。
+YieldWise / Android 等其它实验项目暂不进入当前 4-source brief surface，避免把未公开或未收口的信号混进日报。后续扩展优先通过新的 source pack / adapter 接入，而不是把更多实验项目硬塞进现有简报。
 
 ## 5. 示例简报 / Sample brief
 
 [`docs/sample_brief.md`](docs/sample_brief.md) — 项目初始化时由真实缓存生成的一份。
 
-## 6. 商业化分层（仍在试探）/ Monetization tiers (tentative)
+## 6. 当前研究工具定位 / Current research-tool scope
 
-| 档位 | 频次 | 渠道 | 价格 |
-|---|---|---|---|
-| **Free Daily Brief** | 每个交易日 | RSS + GitHub Pages + Substack | ¥0 |
-| **Paid Weekly Deep-Dive** | 每周 | Substack 付费墙 | ¥39 / 月 |
-| **Paid Quarterly Report** | 每季 | PDF 邮件交付 | ¥199 / 季 |
+现阶段不做销售转化或渠道运营。项目目标是把多来源 alt-data 的生成、校验、发布和回放流程打磨稳定。
 
-- **Weekly Deep-Dive** 包含：行业纵深 + 敏感性分析 + 可下载的 chart pack
-- **Quarterly Report** 含：选定行业的 HS300 RDD 风格实证分析（脱胎自 `index-inclusion-research`）
-
-定价仅供参考，会在 v1.0 上线前再校准。
+- **研究工具优先**：输出面向自用研究、教学讨论和公开审计，不构成投资建议。
+- **可复现优先**：默认使用 deterministic rules；LLM 只做可选改写 / 翻译，不生成新信号。
+- **接口优先**：继续收敛 source adapter、public summary schema、freshness checks 和发布自动化。
+- **扩展优先**：后续新增市场时，优先抽象 source pack，而不是围绕订阅或渠道运营设计功能。
 
 ## 7. 路线图 / Roadmap
 
@@ -107,7 +103,7 @@ YieldWise / Android 等其它实验项目暂不进入当前 4-source brief surfa
 | **v0.10** | Atom 1.0 feed + Open Graph 社交预览元数据 + 首页图表缩略图与订阅/分享入口 | ✅ 完成 |
 | **v0.11** | **每月 1 日 17:00 上月回顾（aggregate ~20 份日报 + 4 份周报为 sustained themes / reversals / ETF MoM）** | ✅ 完成 |
 | **v0.12** | **内容质量校验 `validate --strict`（指纹新鲜度 / 信号密度 / 跨源一致性 / schema 回归 / 占位符 / 时序一致性 / 必需上游路径）+ 上游 schema 版本闸门** | ✅ 当前 |
-| **v1.0** | 付费墙上线 + Weekly Deep-Dive 实战 | 计划中 |
+| **v1.0** | source pack 抽象 + 多市场配置化接入 + 非商业发布边界收敛 | 计划中 |
 
 ## 8. 快速开始 / Quickstart
 
@@ -239,7 +235,7 @@ tail -f output/launchd_runs.log
 0 9 * * 1-5 /path/to/altdata-brief/scripts/generate_daily.sh >> /tmp/altdata-brief.log 2>&1
 ```
 
-更深入：[docs/architecture.md](docs/architecture.md) · [docs/monetization_plan.md](docs/monetization_plan.md)
+更深入：[docs/architecture.md](docs/architecture.md) · [docs/PUBLISHING.md](docs/PUBLISHING.md)
 
 ### v0.6 — gh-pages 自动发布 / Public live site
 
@@ -380,8 +376,6 @@ launchctl list | grep altdata
 
 更深入：[docs/PUBLISHING.md §9](docs/PUBLISHING.md)。
 
-## 9. License + Contact
+## 9. License
 
 MIT.
-
-* For outsourcing / collaboration inquiries: this repo IS my portfolio — open an issue or DM on Boss/Upwork.

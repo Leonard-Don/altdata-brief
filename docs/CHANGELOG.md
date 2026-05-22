@@ -220,9 +220,9 @@
 ### What was deferred to v0.7
 
 * LLM rephrase layer for the "本日观察" section.
-* Substack auto-publish.
-* Email subscriber pipeline.
-* Analytics / paid-tier auth.
+* Optional external publishing adapters.
+* Feed delivery reliability checks.
+* Reader-facing metadata without paid-tier assumptions.
 
 ---
 

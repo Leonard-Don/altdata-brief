@@ -48,3 +48,22 @@ def test_public_copy_has_no_stale_six_project_surface() -> None:
                 hits.append(f"{path.relative_to(ROOT)}:{lineno}: {line}")
 
     assert hits == []
+
+
+def test_readme_has_no_commercial_positioning() -> None:
+    """README should present the project as non-commercial research tooling."""
+    forbidden = (
+        "商业化",
+        "Monetization",
+        "付费",
+        "Paid",
+        "Substack",
+        "外包",
+        "Boss/Upwork",
+        "¥",
+        "content-as-distribution",
+    )
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    hits = [needle for needle in forbidden if needle in text]
+
+    assert hits == []
