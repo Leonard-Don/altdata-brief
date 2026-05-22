@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -176,6 +177,62 @@ def test_aggregate_usage_tolerates_malformed_partial_records_without_text_leak(
     assert "status private phrase" not in rendered
     assert "今日核心信号" not in rendered
     assert "private prose" not in rendered
+
+
+def test_aggregate_usage_days_window_skips_unparseable_timestamps(
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "llm_usage.jsonl"
+    log_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-05-21T10:30:00Z",
+                        "model": "recent-model",
+                        "status": "ok",
+                        "input_tokens": 10,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-05-18T10:30:00Z",
+                        "model": "old-model",
+                        "status": "ok",
+                        "input_tokens": 20,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "not-a-date",
+                        "model": "malformed-ts-model",
+                        "status": "ok",
+                        "input_tokens": 30,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "model": "missing-ts-model",
+                        "status": "ok",
+                        "input_tokens": 40,
+                    }
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    usage = aggregate_usage(
+        log_path,
+        days=1,
+        now=datetime(2026, 5, 21, 12, 0, tzinfo=UTC),
+    )
+
+    assert usage.total_calls == 1
+    assert usage.input_tokens == 10
+    assert usage.per_model == {"recent-model": 1}
+    assert usage.first_ts == "2026-05-21T10:30:00Z"
+    assert usage.last_ts == "2026-05-21T10:30:00Z"
 
 
 # ---------------------------------------------------------------------------

@@ -159,15 +159,9 @@ def aggregate_usage(
                 continue
             if not isinstance(rec, dict):
                 continue
-            ts_raw = rec.get("timestamp")
-            ts_label = ts_raw if isinstance(ts_raw, str) else None
-            if cutoff is not None and ts_label:
-                try:
-                    ts = datetime.fromisoformat(ts_label.replace("Z", "+00:00"))
-                except ValueError:
-                    ts = None
-                if ts is not None and ts < cutoff:
-                    continue
+            ts_label, ts = _parse_usage_timestamp(rec.get("timestamp"))
+            if cutoff is not None and (ts is None or ts < cutoff):
+                continue
 
             total += 1
             status = _safe_status(rec.get("status"))
@@ -192,10 +186,11 @@ def aggregate_usage(
             except (TypeError, ValueError):
                 pass
 
-            if first_ts is None or (ts_label and ts_label < first_ts):
-                first_ts = ts_label
-            if last_ts is None or (ts_label and ts_label > last_ts):
-                last_ts = ts_label
+            if ts_label is not None:
+                if first_ts is None or ts_label < first_ts:
+                    first_ts = ts_label
+                if last_ts is None or ts_label > last_ts:
+                    last_ts = ts_label
 
     avg_latency = sum(latencies) / len(latencies) if latencies else None
     return UsageAggregate(
@@ -221,6 +216,23 @@ def _safe_nonnegative_int(value: Any) -> int:
         return max(0, int(value))
     except (TypeError, ValueError):
         return 0
+
+
+def _parse_usage_timestamp(value: Any) -> tuple[str | None, datetime | None]:
+    if not isinstance(value, str):
+        return None, None
+    label = value.strip()
+    if not label:
+        return None, None
+    try:
+        ts = datetime.fromisoformat(label.replace("Z", "+00:00"))
+    except ValueError:
+        return label, None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
+    else:
+        ts = ts.astimezone(UTC)
+    return label, ts
 
 
 def _safe_usage_extra(extra: dict[str, Any]) -> dict[str, str]:
