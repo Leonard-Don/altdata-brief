@@ -38,7 +38,6 @@ class _Candidate:
     framing: str
     context: str
     action: str
-    source_label: str
 
 
 _BOLDED_RE = re.compile(r"\*\*([^*]+)\*\*")
@@ -179,7 +178,6 @@ def _policy_candidate(payload: AdapterPayload) -> _Candidate | None:
         framing=framing,
         context=context,
         action=action,
-        source_label=payload.cache_label,
     )
 
 
@@ -215,7 +213,6 @@ def _inventory_candidate(payload: AdapterPayload) -> _Candidate | None:
         framing=framing,
         context=context,
         action=action,
-        source_label=payload.cache_label,
     )
 
 
@@ -251,7 +248,6 @@ def _etf_candidate(payload: AdapterPayload) -> _Candidate | None:
         framing=framing,
         context=context,
         action=action,
-        source_label=payload.cache_label,
     )
 
 
@@ -283,7 +279,6 @@ def _industry_candidate(payload: AdapterPayload) -> _Candidate | None:
         framing=framing,
         context=context,
         action=action,
-        source_label=payload.cache_label,
     )
 
 
@@ -306,7 +301,6 @@ def _index_candidate(payload: AdapterPayload) -> _Candidate | None:
             framing=framing,
             context=context,
             action=action,
-            source_label=payload.cache_label,
         )
     verdicts = payload.data.get("verdicts") or []
     if not verdicts:
@@ -328,5 +322,4 @@ def _index_candidate(payload: AdapterPayload) -> _Candidate | None:
         framing=framing,
         context=context,
         action=action,
-        source_label=payload.cache_label,
     )

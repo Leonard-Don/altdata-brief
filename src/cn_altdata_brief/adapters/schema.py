@@ -111,11 +111,6 @@ class SchemaContract:
                 f"{self.implicit_version} not in supported={sorted(self.supported)}"
             )
 
-    @property
-    def max_supported(self) -> int | None:
-        """Highest supported version, or ``None`` when none declared."""
-        return max(self.supported) if self.supported else None
-
 
 def _coerce_version(raw: Any) -> int | None:
     """Coerce a raw ``schema_version`` value to ``int``.

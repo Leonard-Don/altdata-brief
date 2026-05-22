@@ -125,7 +125,7 @@ class GhPagesPublisher:
     """Copy briefs into a ``gh-pages`` branch and push them.
 
     Construct it with the locally-rooted directory layout, then call
-    :meth:`publish` (real run) or :meth:`plan_only` (dry run).
+    :meth:`publish`; pass ``dry_run=True`` for planning-only output.
 
     Parameters
     ----------
@@ -349,18 +349,6 @@ class GhPagesPublisher:
             if _looks_like_monthly_stem(stem):
                 stems.add(stem)
         return sorted(stems, reverse=True)
-
-    def plan_only(self, date_str: str) -> PublishResult:
-        """Convenience wrapper around :meth:`plan` returning a `PublishResult`."""
-        the_plan = self.plan(date_str)
-        return PublishResult(
-            plan=the_plan,
-            dry_run=True,
-            pushed=False,
-            commit_sha=None,
-            original_branch=self._current_branch_safe(),
-            message=self._summarize_plan(the_plan),
-        )
 
     def publish(
         self,
@@ -1200,25 +1188,3 @@ def default_template_dir() -> Path:
     # publish/gh_pages.py → src/cn_altdata_brief/publish/ → src/cn_altdata_brief/
     # → src/ → <repo_root>
     return Path(__file__).resolve().parents[3] / "gh-pages-template"
-
-
-def default_brief_dir() -> Path:
-    return Path(__file__).resolve().parents[3] / "output" / "briefs"
-
-
-def default_chart_dir() -> Path:
-    return Path(__file__).resolve().parents[3] / "output" / "charts"
-
-
-def default_feed_path() -> Path:
-    return Path(__file__).resolve().parents[3] / "output" / "feed.xml"
-
-
-def default_atom_path() -> Path:
-    """v0.10 — Atom 1.0 feed at ``output/feed.atom``."""
-    return Path(__file__).resolve().parents[3] / "output" / "feed.atom"
-
-
-def utc_today() -> str:
-    """Return today's UTC date in ``YYYY-MM-DD`` form (matches the CLI default)."""
-    return datetime.now(UTC).strftime("%Y-%m-%d")
