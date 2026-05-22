@@ -1,10 +1,10 @@
 ---
 layout: default
-title: 中国另类数据日报
-description: 基于 4 个公开摘要/快照数据源合成的中国权益市场另类数据研究简报。
+title: 多市场另类数据日报
+description: 基于 4 个公开摘要/快照数据源合成的多市场另类数据研究简报。
 ---
 
-# 中国另类数据日报
+# 多市场另类数据日报
 
 > 每个交易日 17:00（北京时间）自动生成的确定性研究简报，
 > 合成自 4 个公开摘要/快照数据源。
@@ -14,14 +14,14 @@ description: 基于 4 个公开摘要/快照数据源合成的中国权益市场
   <strong>订阅：</strong>
   <a class="sub-btn rss" href="feed.xml">RSS 2.0</a>
   <a class="sub-btn atom" href="feed.atom">Atom 1.0</a>
-  <a class="sub-btn github" href="https://github.com/Leonard-Don/cn-altdata-brief">源码</a>
+  <a class="sub-btn github" href="https://github.com/Leonard-Don/altdata-brief">源码</a>
 </section>
 
 <section class="share-bar" markdown="0">
   <strong>分享：</strong>
-  <a href="https://twitter.com/intent/tweet?text=CN%20AltData%20Brief&url=https%3A%2F%2Fleonard-don.github.io%2Fcn-altdata-brief">Twitter</a>
-  <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fleonard-don.github.io%2Fcn-altdata-brief">LinkedIn</a>
-  <a href="https://t.me/share/url?url=https%3A%2F%2Fleonard-don.github.io%2Fcn-altdata-brief&text=CN%20AltData%20Brief">Telegram</a>
+  <a href="https://twitter.com/intent/tweet?text=AltData%20Brief&url=https%3A%2F%2Fleonard-don.github.io%2Faltdata-brief">Twitter</a>
+  <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fleonard-don.github.io%2Faltdata-brief">LinkedIn</a>
+  <a href="https://t.me/share/url?url=https%3A%2F%2Fleonard-don.github.io%2Faltdata-brief&text=AltData%20Brief">Telegram</a>
 </section>
 
 ## 简报归档
@@ -49,4 +49,4 @@ table img { max-height: 48px; width: auto; border: 1px solid #d0d7de; border-rad
 
 ---
 
-由 [`cn-altdata-brief`](https://github.com/Leonard-Don/cn-altdata-brief) 生成 · MIT
+由 [`altdata-brief`](https://github.com/Leonard-Don/altdata-brief) 生成 · MIT

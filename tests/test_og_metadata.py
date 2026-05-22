@@ -18,27 +18,27 @@ import json
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from cn_altdata_brief.publish.og_metadata import (
+from altdata_brief.publish.og_metadata import (
     DEFAULT_SITE_URL,
     _strip_md_emphasis,
     generate_og_tags,
     render_meta_tags,
     signal_categories_for,
 )
-from cn_altdata_brief.render.og_image import (
+from altdata_brief.render.og_image import (
     chart_url_for,
     pick_og_chart,
 )
-from cn_altdata_brief.render.rss import render_atom_feed, render_feed
+from altdata_brief.render.rss import render_atom_feed, render_feed
 
 SAMPLE_BRIEF = """---
 date: 2026-05-17
 generated_at: 2026-05-17T13:58:17Z
 ---
 
-# CN AltData Brief — 2026-05-17
+# AltData Brief — 2026-05-17
 
-> 由 `cn-altdata-brief` 在 2026-05-17 自动生成。
+> 由 `altdata-brief` 在 2026-05-17 自动生成。
 
 ---
 
@@ -83,7 +83,7 @@ def test_generate_og_tags_emits_required_fields(tmp_path: Path) -> None:
 
     tags = generate_og_tags(
         brief,
-        site_url="https://example.com/cn-altdata-brief",
+        site_url="https://example.com/altdata-brief",
         sections=SAMPLE_SECTIONS,
         chart_dir=chart_dir,
     )
@@ -111,16 +111,16 @@ def test_generate_og_tags_emits_required_fields(tmp_path: Path) -> None:
     assert "新能源汽车" in tags["og:title"]
     assert tags["og:type"] == "article"
     assert tags["og:locale"] == "zh_CN"
-    assert tags["og:site_name"] == "中国另类数据日报"
+    assert tags["og:site_name"] == "多市场另类数据日报"
     assert tags["twitter:card"] == "summary_large_image"
     assert tags["og:url"].endswith("/briefs/2026-05-17.html")
-    assert tags["og:image"].startswith("https://example.com/cn-altdata-brief/charts/")
+    assert tags["og:image"].startswith("https://example.com/altdata-brief/charts/")
 
 
 def test_generate_og_tags_falls_back_when_brief_degraded(tmp_path: Path) -> None:
     brief = tmp_path / "2026-05-17.md"
     brief.write_text(
-        "# CN AltData Brief — 2026-05-17\n\n## 1. 政策动向\n\n_数据缺失_\n",
+        "# AltData Brief — 2026-05-17\n\n## 1. 政策动向\n\n_数据缺失_\n",
         encoding="utf-8",
     )
     tags = generate_og_tags(brief, sections={}, chart_dir=None)
@@ -277,7 +277,7 @@ def test_feed_escapes_adversarial_description_cdata_and_html(tmp_path: Path) -> 
     # so the markdown ``__bold__`` stripper (now applied to feed text
     # to avoid leaking ``**bold**`` markers to readers) does not eat
     # them — we still want to verify CDATA escaping integrity here.
-    adversarial = """# CN AltData Brief — 2026-05-17
+    adversarial = """# AltData Brief — 2026-05-17
 
 - **注入测试**：safe ]]> xCDATA_OPENx xCDATA_CLOSEx <script>alert(1)</script> & <b>raw</b>
 """
@@ -400,7 +400,7 @@ def test_atom_feed_schema(tmp_path: Path) -> None:
     assert root.tag == f"{ns}feed"
     assert root.find(f"{ns}id") is not None
     assert root.find(f"{ns}updated") is not None
-    assert root.find(f"{ns}title").text == "中国另类数据日报"
+    assert root.find(f"{ns}title").text == "多市场另类数据日报"
     entries = root.findall(f"{ns}entry")
     assert len(entries) == 2
     for e in entries:
@@ -448,7 +448,7 @@ def test_brief_html_template_includes_og_meta() -> None:
 
 
 def test_inject_og_frontmatter_preserves_existing_keys(tmp_path: Path) -> None:
-    from cn_altdata_brief.cli import _inject_og_frontmatter
+    from altdata_brief.cli import _inject_og_frontmatter
 
     brief = tmp_path / "2026-05-17.md"
     brief.write_text(SAMPLE_BRIEF, encoding="utf-8")
@@ -518,7 +518,7 @@ def test_generate_og_tags_strips_emphasis_from_user_facing_fields(tmp_path: Path
 date: 2026-05-19
 ---
 
-# CN AltData Brief — 2026-05-19
+# AltData Brief — 2026-05-19
 
 ## 1. 政策动向
 
@@ -544,7 +544,7 @@ date: 2026-05-19
 
 
 def test_inject_og_frontmatter_serializes_adversarial_values(tmp_path: Path) -> None:
-    from cn_altdata_brief.cli import _inject_og_frontmatter
+    from altdata_brief.cli import _inject_og_frontmatter
 
     brief = tmp_path / "2026-05-17.md"
     brief.write_text(SAMPLE_BRIEF, encoding="utf-8")
@@ -557,7 +557,7 @@ def test_inject_og_frontmatter_serializes_adversarial_values(tmp_path: Path) -> 
         "og:image": "https://example.com/charts/2026-05-17/policy_impact.png",
         "og:locale": "zh_CN",
         "article:section": "Alt\n---\nData",
-        "twitter:site": "@cn_altdata",
+        "twitter:site": "@altdata_brief",
         "article:published_time": "2026-05-17T09:00:00Z",
     }
 

@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from cn_altdata_brief.adapters import (
+from altdata_brief.adapters import (
     ETF512400Adapter,
     IndexResearchAdapter,
     QuantTradingAdapter,
     SuperPricingAdapter,
 )
-from cn_altdata_brief.adapters.base import AdapterUnavailable
+from altdata_brief.adapters.base import AdapterUnavailable
 
 
 class TestSuperPricingAdapter:
@@ -114,15 +114,20 @@ class TestETF512400Adapter:
 
 class TestAdapterEnvFlag:
     def test_live_flag_defaults_to_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ALTDATA_BRIEF_LIVE", "1")
+        adapter = SuperPricingAdapter()
+        assert adapter.allow_live is True
+
+        monkeypatch.setenv("ALTDATA_BRIEF_LIVE", "0")
+        adapter = SuperPricingAdapter()
+        assert adapter.allow_live is False
+
+    def test_legacy_live_flag_defaults_to_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("CN_ALTDATA_BRIEF_LIVE", "1")
         adapter = SuperPricingAdapter()
         assert adapter.allow_live is True
 
-        monkeypatch.setenv("CN_ALTDATA_BRIEF_LIVE", "0")
-        adapter = SuperPricingAdapter()
-        assert adapter.allow_live is False
-
     def test_explicit_allow_live_overrides_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("CN_ALTDATA_BRIEF_LIVE", "1")
+        monkeypatch.setenv("ALTDATA_BRIEF_LIVE", "1")
         adapter = SuperPricingAdapter(allow_live=False)
         assert adapter.allow_live is False

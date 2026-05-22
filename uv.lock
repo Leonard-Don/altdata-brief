@@ -150,7 +150,7 @@ wheels = [
 ]
 
 [[package]]
-name = "cn-altdata-brief"
+name = "altdata-brief"
 version = "0.11.0"
 source = { editable = "." }
 dependencies = [

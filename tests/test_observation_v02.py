@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cn_altdata_brief.adapters import (
+from altdata_brief.adapters import (
     ETF512400Adapter,
     IndexResearchAdapter,
     QuantTradingAdapter,
     SuperPricingAdapter,
 )
-from cn_altdata_brief.synthesis import synthesize_observation
-from cn_altdata_brief.synthesis.baseline import (
+from altdata_brief.synthesis import synthesize_observation
+from altdata_brief.synthesis.baseline import (
     SIGNAL_PERSISTENCE_DAYS,
     describe_intensity,
 )

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cn_altdata_brief.adapters import (
+from altdata_brief.adapters import (
     ETF512400Adapter,
     IndexResearchAdapter,
     QuantTradingAdapter,
     SuperPricingAdapter,
 )
-from cn_altdata_brief.adapters.base import AdapterPayload
-from cn_altdata_brief.synthesis import (
+from altdata_brief.adapters.base import AdapterPayload
+from altdata_brief.synthesis import (
     synthesize_etf_flow,
     synthesize_industry,
     synthesize_inventory,
@@ -63,7 +63,7 @@ def test_inventory_zero_value_metal_collapses_to_no_weekly_change() -> None:
     the noise prefix '周价格变化 +0.00% · 波动率 0.0' and renders '无周变动'
     instead — same pattern as the industry-section M2 fix (commit 1e92acd).
     """
-    from cn_altdata_brief.synthesis.inventory import _format_metal
+    from altdata_brief.synthesis.inventory import _format_metal
 
     line = _format_metal(
         {
@@ -85,7 +85,7 @@ def test_inventory_zero_value_metal_collapses_to_no_weekly_change() -> None:
 
 def test_inventory_nonzero_value_metal_preserves_existing_format() -> None:
     """Non-zero data path is unchanged — full format with percent + volatility."""
-    from cn_altdata_brief.synthesis.inventory import _format_metal
+    from altdata_brief.synthesis.inventory import _format_metal
 
     line = _format_metal(
         {

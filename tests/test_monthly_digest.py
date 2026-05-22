@@ -9,7 +9,7 @@ Covers the deterministic synthesis path end-to-end:
 * ETF NAV month-over-month decomposition (first / last / high / low),
 * carry-forward "下月观察" forecast (sustained themes alive in last week),
 * graceful degradation on empty inputs,
-* CLI surface (``cn-altdata-brief monthly-digest``),
+* CLI surface (``altdata-brief monthly-digest``),
 * launchd installer renders the 1st-of-month plist with Day=1.
 
 Tests synthesize their own CN brief markdown files so the digest
@@ -28,8 +28,8 @@ from pathlib import Path
 
 import pytest
 
-from cn_altdata_brief.cli import main as cli_main
-from cn_altdata_brief.digest import (
+from altdata_brief.cli import main as cli_main
+from altdata_brief.digest import (
     CARRY_FORWARD_LAST_WEEK_THRESHOLD,
     DEFAULT_SUSTAINED_THRESHOLD,
     collect_brief_paths_for_month,
@@ -40,7 +40,7 @@ from cn_altdata_brief.digest import (
     parse_weekly_digest,
     previous_month,
 )
-from cn_altdata_brief.render import (
+from altdata_brief.render import (
     render_monthly_digest_markdown,
     render_weekly_digest_markdown,
 )
@@ -90,7 +90,7 @@ def _brief(
         nav_line = "- NAV (n/a) · 单位净值 n/a · 日收益 n/a"
 
     return (
-        f"# CN AltData Brief — {date_iso}\n\n"
+        f"# AltData Brief — {date_iso}\n\n"
         "## 1. 政策动向\n\n"
         f"{pol_block}\n\n"
         "**Sources:** super-pricing-system\n\n"
@@ -567,7 +567,7 @@ def _emit_install_plists(target_dir: Path) -> Path:
 )
 def test_launchd_monthly_plist_renders_day_1_17_00(tmp_path: Path) -> None:
     plist_dir = _emit_install_plists(tmp_path)
-    monthly = plist_dir / "com.leonardodon.cn-altdata-brief.monthly.plist"
+    monthly = plist_dir / "com.leonardodon.altdata-brief.monthly.plist"
     assert monthly.exists()
     root = ET.parse(monthly).getroot()
     body = root.find("dict")
@@ -604,9 +604,9 @@ def test_launchd_monthly_plist_renders_day_1_17_00(tmp_path: Path) -> None:
 def test_launchd_installer_now_installs_three_plists(tmp_path: Path) -> None:
     plist_dir = _emit_install_plists(tmp_path)
     expected = {
-        "com.leonardodon.cn-altdata-brief.plist",
-        "com.leonardodon.cn-altdata-brief.weekly.plist",
-        "com.leonardodon.cn-altdata-brief.monthly.plist",
+        "com.leonardodon.altdata-brief.plist",
+        "com.leonardodon.altdata-brief.weekly.plist",
+        "com.leonardodon.altdata-brief.monthly.plist",
     }
-    on_disk = {p.name for p in plist_dir.glob("com.leonardodon.cn-altdata-brief*.plist")}
+    on_disk = {p.name for p in plist_dir.glob("com.leonardodon.altdata-brief*.plist")}
     assert expected <= on_disk

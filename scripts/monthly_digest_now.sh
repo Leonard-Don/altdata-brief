@@ -6,7 +6,7 @@
 # shape of weekly_digest_now.sh:
 #   - cd to project root
 #   - run `uv sync --quiet`
-#   - run `uv run cn-altdata-brief monthly-digest`
+#   - run `uv run altdata-brief monthly-digest`
 #   - if digest succeeded AND RUN_PUBLISH_AFTER_DIGEST != 0, chain
 #     `scripts/publish_now.sh` so the monthly digest lands on gh-pages.
 #   - on non-zero exit at any stage, fire a macOS notification via osascript
@@ -49,10 +49,10 @@ if [[ "${MONTHLY_OF:-}" == "" && "${MONTHLY_DEFER_WEEKENDS:-1}" != "0" ]]; then
 fi
 
 if ! command -v uv >/dev/null 2>&1; then
-    msg="uv not found in PATH; cn-altdata-brief monthly-digest cannot proceed"
+    msg="uv not found in PATH; altdata-brief monthly-digest cannot proceed"
     echo "[$(stamp)] ERROR ${msg}" | tee -a "${LOG_PATH}"
     if [[ "$(uname -s)" == "Darwin" ]]; then
-        osascript -e "display notification \"${msg}\" with title \"cn-altdata-brief\"" || true
+        osascript -e "display notification \"${msg}\" with title \"altdata-brief\"" || true
     fi
     exit 99
 fi
@@ -61,7 +61,7 @@ uv sync --quiet >>"${LOG_PATH}" 2>&1 || {
     msg="uv sync failed; see ${LOG_PATH}"
     echo "[$(stamp)] ERROR ${msg}" | tee -a "${LOG_PATH}"
     if [[ "$(uname -s)" == "Darwin" ]]; then
-        osascript -e "display notification \"${msg}\" with title \"cn-altdata-brief\"" || true
+        osascript -e "display notification \"${msg}\" with title \"altdata-brief\"" || true
     fi
     exit 1
 }
@@ -72,7 +72,7 @@ if [[ "${MONTHLY_OF:-}" != "" ]]; then
 fi
 
 set +e
-uv run cn-altdata-brief monthly-digest "${extra_args[@]}" >>"${LOG_PATH}" 2>&1
+uv run altdata-brief monthly-digest "${extra_args[@]}" >>"${LOG_PATH}" 2>&1
 rc=$?
 set -e
 
@@ -82,7 +82,7 @@ else
     msg="monthly-digest failed (exit=${rc}); see ${LOG_PATH}"
     echo "[$(stamp)] ERROR ${msg}" | tee -a "${LOG_PATH}"
     if [[ "$(uname -s)" == "Darwin" ]]; then
-        osascript -e "display notification \"${msg}\" with title \"cn-altdata-brief\"" || true
+        osascript -e "display notification \"${msg}\" with title \"altdata-brief\"" || true
     fi
     exit "${rc}"
 fi

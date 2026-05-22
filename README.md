@@ -1,6 +1,6 @@
-# CN AltData Brief · 中国另类数据日报
+# AltData Brief · 多市场另类数据日报
 
-[![CI](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml/badge.svg)](https://github.com/Leonard-Don/cn-altdata-brief/actions/workflows/ci.yml)
+[![CI](https://github.com/Leonard-Don/altdata-brief/actions/workflows/ci.yml/badge.svg)](https://github.com/Leonard-Don/altdata-brief/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Version](https://img.shields.io/badge/version-v0.11.0-1f6feb)
@@ -9,10 +9,10 @@
 ![Cadence](https://img.shields.io/badge/cadence-T%2B0%20daily-2da44e)
 ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-%F0%9F%9F%A2%20ready-2da44e)
 
-`cn-altdata-brief` 是一个每个交易日自动生成的另类数据研究简报，
-合成自 4 个已公开摘要/快照数据源的真实信号。它是一份**可订阅、可引用、可复现**的中国 A 股 alt-data 视角。
+`altdata-brief` 是一个面向多市场的另类数据研究简报引擎，
+当前每个交易日自动合成 4 个已公开摘要/快照数据源的真实信号。它是一份**可订阅、可引用、可复现**的 multi-market alt-data 视角；中国 A 股只是第一组 source pack，不再是产品边界。
 
-`cn-altdata-brief` produces a daily, deterministic research brief over China-equity alt-data — synthesized from four public-source adapters I maintain. The goal is content-as-distribution: my own tools, made visible.
+`altdata-brief` produces deterministic research briefs over multi-market alt-data — currently synthesized from four public-source adapters I maintain. The goal is content-as-distribution: a reusable publishing surface for source packs across markets.
 
 ---
 
@@ -36,7 +36,7 @@
 
 中文金融内容里，**主观评论是过剩的、可复现的数据视角是稀缺的**。我自己跑的量化工具已经能吐出 public-summary JSON / public snapshot，但它们如果只留在各自仓库里，就很难被读者连续消费。
 
-`cn-altdata-brief` 目前把 4 个公开可读的数据面拼成一份每日刊：
+`altdata-brief` 目前把 4 个公开可读的数据面拼成一份每日刊：
 
 - 对**读者**：免费拿到一份来源可查的 alt-data 速报，不必再听"专家说"
 - 对**我**：把分散的项目串成一个内容产品线，是付费订阅的 v0，也是外包询盘的展示作品
@@ -63,7 +63,7 @@
 
 ## 4. 数据源 = 我的项目组合 / The data sources are my portfolio
 
-`cn-altdata-brief` **不持有任何金融数据**——它只读取上游仓库已经公开的 summary/snapshot 文件。这等同于把整套工具栈里适合公开展示的部分展开给读者看：
+`altdata-brief` **不持有任何金融数据**——它只读取上游仓库已经公开的 summary/snapshot 文件。这等同于把整套工具栈里适合公开展示的部分展开给读者看：
 
 | 项目 | 角色 | 我的另一个 GitHub repo |
 |---|---|---|
@@ -112,16 +112,16 @@ YieldWise / Android 等其它实验项目暂不进入当前 4-source brief surfa
 ## 8. 快速开始 / Quickstart
 
 ```bash
-git clone https://github.com/Leonard-Don/cn-altdata-brief.git
-cd cn-altdata-brief
+git clone https://github.com/Leonard-Don/altdata-brief.git
+cd altdata-brief
 uv sync
-uv run cn-altdata-brief validate || test "$?" -eq 1  # WARN=1 可继续；FAIL=2 才阻断
-uv run cn-altdata-brief generate                     # auto: live → public → cache
-uv run cn-altdata-brief generate --source-mode public  # CI mode, public summaries only
+uv run altdata-brief validate || test "$?" -eq 1  # WARN=1 可继续；FAIL=2 才阻断
+uv run altdata-brief generate                     # auto: live → public → cache
+uv run altdata-brief generate --source-mode public  # CI mode, public summaries only
 ```
 
 生成结果落在 `output/briefs/YYYY-MM-DD.md`、`output/charts/YYYY-MM-DD/*.png`、`output/feed.xml` 与 `output/feed.atom`。周报/月报落在 `output/digests/` 并由同一个 publisher 发布。
-发布/CI 场景请使用 `uv run cn-altdata-brief validate --strict --fail-on-warn`：`--strict` 额外跑内容质量校验（指纹新鲜度 / 信号密度 / 跨源一致性 / schema 回归 / 占位符 / 时序一致性 / 必需上游路径），`--fail-on-warn` 把 WARN 也升级为阻断。每日 GitHub Actions 工作流已默认带 `--strict`。
+发布/CI 场景请使用 `uv run altdata-brief validate --strict --fail-on-warn`：`--strict` 额外跑内容质量校验（指纹新鲜度 / 信号密度 / 跨源一致性 / schema 回归 / 占位符 / 时序一致性 / 必需上游路径），`--fail-on-warn` 把 WARN 也升级为阻断。每日 GitHub Actions 工作流已默认带 `--strict`。
 
 ### 可选 LLM 改写 / Optional LLM rephrase
 
@@ -130,8 +130,8 @@ uv run cn-altdata-brief generate --source-mode public  # CI mode, public summari
 ```bash
 uv sync --extra llm
 export ANTHROPIC_API_KEY=...
-uv run cn-altdata-brief generate --with-llm
-uv run cn-altdata-brief llm-usage
+uv run altdata-brief generate --with-llm
+uv run altdata-brief llm-usage
 ```
 
 边界：
@@ -148,31 +148,31 @@ uv run cn-altdata-brief llm-usage
 ```bash
 uv sync --extra llm
 export ANTHROPIC_API_KEY=...
-uv run cn-altdata-brief generate --with-llm --languages CN,EN
+uv run altdata-brief generate --with-llm --languages CN,EN
 ```
 
 边界：
 
 - **中文永远是 ground truth**——英文版本是加法（additive）侧通道，不会影响默认 CN 输出。
-- 翻译时数字（百分比、价格、日期）必须 1:1 保留；行业名按 `src/cn_altdata_brief/llm/industry_mapping.json` 的中英对照（如 `新能源汽车 → EV / new energy vehicles`、`电网 → power grid`、`有色金属ETF南方 → ChinaAMC SSE Non-Ferrous Metals ETF`）。
+- 翻译时数字（百分比、价格、日期）必须 1:1 保留；行业名按 `src/altdata_brief/llm/industry_mapping.json` 的中英对照（如 `新能源汽车 → EV / new energy vehicles`、`电网 → power grid`、`有色金属ETF南方 → ChinaAMC SSE Non-Ferrous Metals ETF`）。
 - 校验未通过、或 SDK / API key 缺失、或网络失败时，`.en.md` 仍会写盘，但内容是带 banner 的 CN 兜底——`translation_status: validation_failed | api_key_missing | sdk_missing` 标在 frontmatter。
 - 单日双语成本：~1500 input + ~1000 output tokens ≈ $0.02（claude-3-5-sonnet 价格，2026 年报价）；按交易日全年 ≈ $5。
 - RSS 每个日期会有 2 条 item：`[EN] ...` 前缀 + `:en` GUID 后缀；订阅端可按语言过滤。
 - GitHub Pages 首页表格新增 `English` 列。
 
-> The English translation is LLM-produced; the Chinese version is the authoritative source. Numbers (percentages, currency amounts, dates) are preserved exactly. Industry terms follow the curated CN→EN glossary at `src/cn_altdata_brief/llm/industry_mapping.json`. If translation fails for any reason, the EN file still appears at the same URL with a banner explaining the fallback so subscribers never hit a 404.
+> The English translation is LLM-produced; the Chinese version is the authoritative source. Numbers (percentages, currency amounts, dates) are preserved exactly. Industry terms follow the curated CN→EN glossary at `src/altdata_brief/llm/industry_mapping.json`. If translation fails for any reason, the EN file still appears at the same URL with a banner explaining the fallback so subscribers never hit a 404.
 
 ### 数据源解析顺序 / Source resolution
 
 从 v0.3 开始，每个 adapter 按以下顺序解析数据；v0.4 把这一套套到全部 4 个 adapter 上：
 
-1. **Live endpoint** —— 仅在 `--source-mode live` 或 `CN_ALTDATA_BRIEF_LIVE=1` 时尝试。
+1. **Live endpoint** —— 仅在 `--source-mode live` 或 `ALTDATA_BRIEF_LIVE=1` 时尝试。
 2. **Public summary** —— 上游项目仓库中的 `data/public/<source>_summary.json`（ETF 512400 例外，使用 `src/data/liveSnapshot.json`，因 JS app 已经提交进 git，属"public-by-default"）。GitHub Actions 沙箱唯一能读到的路径。
 3. **Cache JSON / CSV** —— 仅本机，作为兜底。
 
 `--source-mode public` 跳过 #3，缺失即报错——这是 CI 用的严格模式。
 `--source-mode cache` 跳过 #1/#2，强制读本机 cache（用于回放历史）。
-`cn-altdata-brief validate` 在最末尾打印每个 adapter 的解析路径 + mtime，便于排查"为什么这次没读 public 而读了 cache"。
+`altdata-brief validate` 在最末尾打印每个 adapter 的解析路径 + mtime，便于排查"为什么这次没读 public 而读了 cache"。
 
 ```mermaid
 flowchart LR
@@ -210,7 +210,7 @@ SMOKE_FIXTURE=1 bash scripts/smoke_e2e.sh   # 跑 tests/fixtures/ 里的固定�
 
 ### macOS 本地每日运行 (launchd)
 
-v0.5 起，可以直接在自己 Mac 上跑每日 brief，不再依赖 GitHub Actions 跨仓 PAT。launchd job 每个工作日 17:00（北京时间 / 收盘后）调用 `uv run cn-altdata-brief generate --source-mode auto`，把结果写进 `output/briefs/YYYY-MM-DD.md`，并维护一个稳定的 `output/briefs/latest.md` 符号链接供外部读取（RSS、发布脚本等）。
+v0.5 起，可以直接在自己 Mac 上跑每日 brief，不再依赖 GitHub Actions 跨仓 PAT。launchd job 每个工作日 17:00（北京时间 / 收盘后）调用 `uv run altdata-brief generate --source-mode auto`，把结果写进 `output/briefs/YYYY-MM-DD.md`，并维护一个稳定的 `output/briefs/latest.md` 符号链接供外部读取（RSS、发布脚本等）。
 
 ```bash
 # 一键安装：写 plist、launchctl load、自检
@@ -227,7 +227,7 @@ bash scripts/uninstall_launchd_macos.sh
 
 ```bash
 # 查看任务是否已排队
-launchctl list | grep cn-altdata
+launchctl list | grep altdata
 
 # 跟踪运行日志
 tail -f output/launchd_runs.log
@@ -236,7 +236,7 @@ tail -f output/launchd_runs.log
 非 macOS 平台（Linux 服务器、WSL）使用常规 `cron` 即可：参见现有 `scripts/generate_daily.sh`，crontab 一行：
 
 ```cron
-0 9 * * 1-5 /path/to/cn-altdata-brief/scripts/generate_daily.sh >> /tmp/cn-altdata-brief.log 2>&1
+0 9 * * 1-5 /path/to/altdata-brief/scripts/generate_daily.sh >> /tmp/altdata-brief.log 2>&1
 ```
 
 更深入：[docs/architecture.md](docs/architecture.md) · [docs/monetization_plan.md](docs/monetization_plan.md)
@@ -245,20 +245,20 @@ tail -f output/launchd_runs.log
 
 v0.6 起，每次 generate 之后会自动把 brief + charts + RSS/Atom feeds 推到 `gh-pages` 分支；v0.11 同一路径也会带上 weekly/monthly digests，由 GitHub Pages 渲染成静态站点：
 
-> **Live URL**: [https://leonard-don.github.io/cn-altdata-brief/](https://leonard-don.github.io/cn-altdata-brief/) _(占位 / placeholder — once you run `gh repo create` + enable Pages, this is where readers land)_
+> **Live URL**: [https://leonard-don.github.io/altdata-brief/](https://leonard-don.github.io/altdata-brief/) _(占位 / placeholder — once you run `gh repo create` + enable Pages, this is where readers land)_
 
 ```bash
 # 手动跑一次 publish（默认 push 到 origin/gh-pages）
-uv run cn-altdata-brief publish
+uv run altdata-brief publish
 
 # 仅看会发生什么，不动 git
-uv run cn-altdata-brief publish --dry-run
+uv run altdata-brief publish --dry-run
 
 # 重发某天的旧 brief
-uv run cn-altdata-brief publish --date 2026-05-16
+uv run altdata-brief publish --date 2026-05-16
 
 # 只本地 commit，不 push（飞机模式）
-uv run cn-altdata-brief publish --no-push
+uv run altdata-brief publish --no-push
 
 # launchd 链式 publish 默认开启；临时关闭：
 RUN_PUBLISH_AFTER_GENERATE=0 bash scripts/run_now.sh
@@ -279,16 +279,16 @@ RUN_PUBLISH_AFTER_GENERATE=0 bash scripts/run_now.sh
 
 ```bash
 # 立即生成本周（按 anchor 推断 Mon..Fri）
-uv run cn-altdata-brief weekly-digest
+uv run altdata-brief weekly-digest
 
 # 生成历史某一周（anchor 是该周任意工作日）
-uv run cn-altdata-brief weekly-digest --week-of 2026-05-14
+uv run altdata-brief weekly-digest --week-of 2026-05-14
 
 # 提高 recurrence 门槛 → 主题更少但更强
-uv run cn-altdata-brief weekly-digest --recurrence-threshold 4
+uv run altdata-brief weekly-digest --recurrence-threshold 4
 
 # 顺便生成英文版（复用 v0.8 翻译基础设施）
-uv run cn-altdata-brief weekly-digest --with-llm
+uv run altdata-brief weekly-digest --with-llm
 ```
 
 数字落地：
@@ -317,9 +317,9 @@ bash scripts/weekly_digest_now.sh
 bash scripts/uninstall_launchd_macos.sh
 
 # 查看两个 job 是否在列：
-launchctl list | grep cn-altdata
-#  com.leonardodon.cn-altdata-brief
-#  com.leonardodon.cn-altdata-brief.weekly
+launchctl list | grep altdata
+#  com.leonardodon.altdata-brief
+#  com.leonardodon.altdata-brief.weekly
 ```
 
 `scripts/weekly_digest_now.sh` 跑完后默认会链式调用 `scripts/publish_now.sh`，所以新 digest 周五就会出现在公共 URL。临时关闭：`RUN_PUBLISH_AFTER_DIGEST=0`。
@@ -332,17 +332,17 @@ v0.11 闭环了 cadence trilogy：**daily（每个交易日）→ weekly（每�
 
 ```bash
 # 默认聚合 LAST month（与 1st-of-next-month launchd 节奏一致）
-uv run cn-altdata-brief monthly-digest
+uv run altdata-brief monthly-digest
 
 # 显式指定月份（YYYY-MM 或 YYYY-MM-DD 皆可）
-uv run cn-altdata-brief monthly-digest --month-of 2026-04
-uv run cn-altdata-brief monthly-digest --month-of 2026-04-15
+uv run altdata-brief monthly-digest --month-of 2026-04
+uv run altdata-brief monthly-digest --month-of 2026-04-15
 
 # 提高 sustained 门槛（默认 12 天）
-uv run cn-altdata-brief monthly-digest --sustained-threshold 15
+uv run altdata-brief monthly-digest --sustained-threshold 15
 
 # 顺便生成英文版（复用 v0.8 翻译基础设施）
-uv run cn-altdata-brief monthly-digest --with-llm
+uv run altdata-brief monthly-digest --with-llm
 ```
 
 数字落地：
@@ -370,10 +370,10 @@ bash scripts/monthly_digest_now.sh
 bash scripts/uninstall_launchd_macos.sh
 
 # 查看任务是否在列：
-launchctl list | grep cn-altdata
-#  com.leonardodon.cn-altdata-brief
-#  com.leonardodon.cn-altdata-brief.weekly
-#  com.leonardodon.cn-altdata-brief.monthly
+launchctl list | grep altdata
+#  com.leonardodon.altdata-brief
+#  com.leonardodon.altdata-brief.weekly
+#  com.leonardodon.altdata-brief.monthly
 ```
 
 `scripts/monthly_digest_now.sh` 在每月 1 日 17:00 跑；如果 1 号正好是周六/周日，wrapper 会自动把 run 延后到下周一（`MONTHLY_DEFER_WEEKENDS=0` 可关闭）。完成后默认链式调用 `scripts/publish_now.sh`，所以月度回顾月初就会出现在公共 URL。

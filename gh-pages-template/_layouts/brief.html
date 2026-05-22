@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 {%- assign page_lang = page.lang | default: 'zh-CN' -%}
-{%- assign brief_title = page.og_title | default: page.title | default: site.title | default: '中国另类数据日报' -%}
+{%- assign brief_title = page.og_title | default: page.title | default: site.title | default: '多市场另类数据日报' -%}
 {%- assign brief_description = page.og_description | default: site.description | default: '' -%}
 {%- assign brief_url = page.og_url | default: page.url | absolute_url -%}
 {%- assign og_locale = page.og_locale | default: 'zh_CN' -%}
-{%- assign site_name = site.title | default: '中国另类数据日报' -%}
+{%- assign site_name = site.title | default: '多市场另类数据日报' -%}
 {%- assign article_time = page.article_published | default: page.date | date_to_xmlschema -%}
 {%- assign article_section = page.og_section | default: '另类数据' -%}
-{%- assign twitter_handle = page.twitter_handle | default: '@cn_altdata' -%}
+{%- assign twitter_handle = page.twitter_handle | default: '@altdata_brief' -%}
 {%- assign share_title = brief_title | url_encode -%}
 {%- assign share_url = brief_url | url_encode -%}
 <html lang="{{ page_lang | escape }}">
@@ -17,7 +17,7 @@
   <title>{{ brief_title | escape }}</title>
   <meta name="description" content="{{ brief_description | escape }}">
   {%- unless page.generated_at == blank -%}
-  <meta name="cn-altdata-generated-at" content="{{ page.generated_at | escape }}">
+  <meta name="altdata-generated-at" content="{{ page.generated_at | escape }}">
   {%- endunless -%}
 
   {%- comment -%}
@@ -48,9 +48,9 @@
   <meta name="twitter:image" content="{{ og_image_url | escape }}">
   {%- endunless -%}
 
-  <link rel="alternate" type="application/rss+xml" title="中国另类数据日报 RSS"
+  <link rel="alternate" type="application/rss+xml" title="多市场另类数据日报 RSS"
         href="{{ '/feed.xml' | relative_url | escape }}">
-  <link rel="alternate" type="application/atom+xml" title="中国另类数据日报 Atom"
+  <link rel="alternate" type="application/atom+xml" title="多市场另类数据日报 Atom"
         href="{{ '/feed.atom' | relative_url | escape }}">
   <style>
     body {
@@ -115,7 +115,7 @@
     &nbsp;·&nbsp;
     <a href="{{ '/feed.atom' | relative_url | escape }}">Atom</a>
     &nbsp;·&nbsp;
-    <a href="https://github.com/Leonard-Don/cn-altdata-brief">GitHub</a>
+    <a href="https://github.com/Leonard-Don/altdata-brief">GitHub</a>
     <span class="realtime-refresh" data-refresh-status aria-live="polite">自动刷新检查中</span>
   </header>
   <hr>
@@ -136,7 +136,7 @@
   <footer>
     <p>
       由
-      <a href="https://github.com/Leonard-Don/cn-altdata-brief">cn-altdata-brief</a>
+      <a href="https://github.com/Leonard-Don/altdata-brief">altdata-brief</a>
       生成 · MIT 许可 · 数据来自 4 个公开摘要/快照源。
     </p>
   </footer>
@@ -146,7 +146,7 @@
       var statusEl = document.querySelector("[data-refresh-status]");
 
       function signatureFor(text) {
-        var generatedAt = text.match(/<meta\s+name=["']cn-altdata-generated-at["'][^>]*content=["']([^"']+)["']/i);
+        var generatedAt = text.match(/<meta\s+name=["']altdata-generated-at["'][^>]*content=["']([^"']+)["']/i);
         if (generatedAt) {
           return "generated_at:" + generatedAt[1];
         }
@@ -158,7 +158,7 @@
       }
 
       function currentPageSignature() {
-        var generatedAt = document.querySelector('meta[name="cn-altdata-generated-at"]');
+        var generatedAt = document.querySelector('meta[name="altdata-generated-at"]');
         if (generatedAt && generatedAt.content) {
           return "generated_at:" + generatedAt.content;
         }

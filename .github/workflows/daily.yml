@@ -22,7 +22,7 @@ on:
 
 env:
   # Tell the brief generator where the upstream checkouts will land.
-  CN_ALTDATA_BRIEF_SOURCE_ROOT: ${{ github.workspace }}/sources
+  ALTDATA_BRIEF_SOURCE_ROOT: ${{ github.workspace }}/sources
 
 jobs:
   generate:
@@ -100,14 +100,14 @@ jobs:
       - name: Inspect resolved source paths
         run: |
           echo "Workspace root: ${{ github.workspace }}"
-          echo "Source root (sees by adapters): ${CN_ALTDATA_BRIEF_SOURCE_ROOT}"
-          find "${CN_ALTDATA_BRIEF_SOURCE_ROOT}" -name '*_summary.json' -maxdepth 6 || true
+          echo "Source root (sees by adapters): ${ALTDATA_BRIEF_SOURCE_ROOT}"
+          find "${ALTDATA_BRIEF_SOURCE_ROOT}" -name '*_summary.json' -maxdepth 6 || true
 
       - name: Validate upstream public summaries
-        run: uv run cn-altdata-brief validate --source-mode public --strict || test "$?" -eq 1
+        run: uv run altdata-brief validate --source-mode public --strict || test "$?" -eq 1
 
       - name: Generate brief (public-summary mode)
-        run: uv run cn-altdata-brief generate --source-mode public --verbose
+        run: uv run altdata-brief generate --source-mode public --verbose
 
       # Fetch the published branch into a local ref when it already exists.
       # The CLI publisher intentionally reasons over local git refs; without
@@ -121,16 +121,16 @@ jobs:
         run: |
           set -euo pipefail
           DATE=$(date -u +"%Y-%m-%d")
-          uv run cn-altdata-brief publish --date "$DATE" --dry-run --no-push
+          uv run altdata-brief publish --date "$DATE" --dry-run --no-push
 
       - name: Publish to gh-pages
         if: github.event_name == 'workflow_dispatch' && inputs.publish == true
         env:
-          GIT_USER_NAME: cn-altdata-brief-bot
-          GIT_USER_EMAIL: bot@cn-altdata-brief.local
+          GIT_USER_NAME: altdata-brief-bot
+          GIT_USER_EMAIL: bot@altdata-brief.local
         run: |
           set -euo pipefail
           DATE=$(date -u +"%Y-%m-%d")
           git config user.name "$GIT_USER_NAME"
           git config user.email "$GIT_USER_EMAIL"
-          uv run cn-altdata-brief publish --date "$DATE"
+          uv run altdata-brief publish --date "$DATE"

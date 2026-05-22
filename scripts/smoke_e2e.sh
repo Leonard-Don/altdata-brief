@@ -6,7 +6,7 @@
 #      (sibling source-repo checkouts containing only data/public/*).
 #   2. rsyncs each upstream project's public-summary artifact into the
 #      scratch dir. ETF 512400 ships its snapshot under src/data/.
-#   3. Points CN_ALTDATA_BRIEF_SOURCE_ROOT at the scratch dir and forces
+#   3. Points ALTDATA_BRIEF_SOURCE_ROOT at the scratch dir and forces
 #      PUBLIC_SUMMARY_PREFERENCE=public_only so the adapters MUST read
 #      from the synthetic public-summary layout (not the maintainer's
 #      real local caches).
@@ -32,7 +32,7 @@ START_TS=$(date +%s)
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-SCRATCH="$(mktemp -d -t cn-altdata-brief-smoke-XXXXXX)"
+SCRATCH="$(mktemp -d -t altdata-brief-smoke-XXXXXX)"
 trap 'rm -rf "$SCRATCH"' EXIT
 
 echo "[smoke_e2e] scratch dir: $SCRATCH"
@@ -118,7 +118,7 @@ fi
 # ----------------------------------------------------------------------
 # 3. Run validate + generate under the simulated CI environment.
 # ----------------------------------------------------------------------
-export CN_ALTDATA_BRIEF_SOURCE_ROOT="$SCRATCH"
+export ALTDATA_BRIEF_SOURCE_ROOT="$SCRATCH"
 export PUBLIC_SUMMARY_PREFERENCE="public_only"
 
 OUTPUT_DIR="$SCRATCH/output"
@@ -133,7 +133,7 @@ echo "[smoke_e2e] validate --source-mode public:"
 # validate may emit WARN for stale ETF / index when local upstreams are old —
 # WARN exits 1 and is allowed here; structural FAIL exits 2 and blocks.
 set +e
-uv run cn-altdata-brief validate --source-mode public
+uv run altdata-brief validate --source-mode public
 validate_rc=$?
 set -e
 if [ "$validate_rc" -ge 2 ]; then
@@ -146,12 +146,12 @@ fi
 
 DATE=$(date -u +"%Y-%m-%d")
 echo "[smoke_e2e] generate --source-mode public --verbose for date=$DATE:"
-uv run cn-altdata-brief generate \
+uv run altdata-brief generate \
     --date "$DATE" \
     --source-mode public \
     --briefs-dir "$BRIEFS_DIR" \
     --charts-dir "$CHARTS_DIR" \
-    --site-url "https://example.test/cn-altdata-brief" \
+    --site-url "https://example.test/altdata-brief" \
     --verbose
 
 # ----------------------------------------------------------------------

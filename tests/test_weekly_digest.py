@@ -25,19 +25,19 @@ from pathlib import Path
 
 import pytest
 
-from cn_altdata_brief.cli import main as cli_main
-from cn_altdata_brief.digest import (
+from altdata_brief.cli import main as cli_main
+from altdata_brief.digest import (
     compose_weekly_digest,
     iso_week_bounds,
     parse_brief,
 )
-from cn_altdata_brief.digest.weekly import (
+from altdata_brief.digest.weekly import (
     FORECAST_PERSISTENCE_THRESHOLD,
     _detect_inflections,
     _detect_themes,
 )
-from cn_altdata_brief.llm.translate import TranslationResult
-from cn_altdata_brief.render import render_weekly_digest_markdown
+from altdata_brief.llm.translate import TranslationResult
+from altdata_brief.render import render_weekly_digest_markdown
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -87,7 +87,7 @@ def _brief(
         nav_line = "- NAV (n/a) · 单位净值 n/a · 日收益 n/a"
 
     return (
-        f"# CN AltData Brief — {date_iso}\n\n"
+        f"# AltData Brief — {date_iso}\n\n"
         "## 1. 政策动向\n\n"
         f"{pol_block}\n\n"
         "**Sources:** super-pricing-system\n\n"
@@ -457,7 +457,7 @@ def test_cli_weekly_digest_with_llm_emits_en_sibling(
     # The translator returns a fallback TranslationResult when no SDK
     # / API key is present — we just need to make sure the .en.md file
     # is written either way.
-    from cn_altdata_brief import cli as cli_mod
+    from altdata_brief import cli as cli_mod
 
     def fake_translate(brief_md: str, target_language: str = "en", **kwargs):
         return TranslationResult(
@@ -533,7 +533,7 @@ def _emit_install_plists(target_dir: Path) -> Path:
 )
 def test_launchd_weekly_plist_renders_friday_18_00(tmp_path: Path) -> None:
     plist_dir = _emit_install_plists(tmp_path)
-    weekly = plist_dir / "com.leonardodon.cn-altdata-brief.weekly.plist"
+    weekly = plist_dir / "com.leonardodon.altdata-brief.weekly.plist"
     assert weekly.exists()
     root = ET.parse(weekly).getroot()
     body = root.find("dict")

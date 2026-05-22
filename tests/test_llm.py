@@ -9,15 +9,15 @@ from pathlib import Path
 
 import pytest
 
-from cn_altdata_brief.llm import (
+from altdata_brief.llm import (
     RephraseResult,
     rephrase_observation,
     validate_rephrase,
 )
-from cn_altdata_brief.llm import (
+from altdata_brief.llm import (
     anthropic_client as ac_mod,
 )
-from cn_altdata_brief.llm.usage import aggregate_usage, log_usage
+from altdata_brief.llm.usage import aggregate_usage, log_usage
 
 
 def test_validate_rephrase_rejects_missing_numbers_and_industries() -> None:

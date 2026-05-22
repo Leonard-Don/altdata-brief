@@ -1,7 +1,7 @@
 """Tests for the v0.8 CN→EN translation layer.
 
 These tests **never** make a real Anthropic API call. We inject a fake
-SDK module by monkey-patching :func:`cn_altdata_brief.llm.translate._sdk_module`
+SDK module by monkey-patching :func:`altdata_brief.llm.translate._sdk_module`
 (the same shim the production code uses), and we monkey-patch
 ``ANTHROPIC_API_KEY`` for the few tests that exercise the success path.
 
@@ -28,22 +28,22 @@ from typing import Any
 
 import pytest
 
-from cn_altdata_brief import cli as cli_mod
-from cn_altdata_brief.adapters import (
+from altdata_brief import cli as cli_mod
+from altdata_brief.adapters import (
     etf_512400 as etf_mod,
 )
-from cn_altdata_brief.adapters import (
+from altdata_brief.adapters import (
     index_research as ix_mod,
 )
-from cn_altdata_brief.adapters import (
+from altdata_brief.adapters import (
     quant_trading as qt_mod,
 )
-from cn_altdata_brief.adapters import (
+from altdata_brief.adapters import (
     super_pricing as sp_mod,
 )
-from cn_altdata_brief.cli import main
-from cn_altdata_brief.llm import translate as translate_mod
-from cn_altdata_brief.llm.translate import (
+from altdata_brief.cli import main
+from altdata_brief.llm import translate as translate_mod
+from altdata_brief.llm.translate import (
     FALLBACK_BANNER,
     TranslationResult,
     load_mapping,
@@ -61,7 +61,7 @@ date: 2026-05-17
 generated_at: 2026-05-17T08:10:33Z
 ---
 
-# CN AltData Brief — 2026-05-17
+# AltData Brief — 2026-05-17
 
 ## 1. 政策动向
 
@@ -85,7 +85,7 @@ date: 2026-05-17
 generated_at: 2026-05-17T08:10:33Z
 ---
 
-# CN AltData Brief — 2026-05-17
+# AltData Brief — 2026-05-17
 
 ## 1. Policy
 
@@ -342,7 +342,7 @@ def test_cli_generate_bilingual_writes_both_files(
                 'translation_status: "ok"\n'
                 'translation_source_sha16: "deadbeefdeadbeef"\n'
                 "---\n\n"
-                "# CN AltData Brief — 2026-05-17 (EN)\n\n"
+                "# AltData Brief — 2026-05-17 (EN)\n\n"
                 "translated content placeholder.\n"
             ),
             source_hash="deadbeefdeadbeef",
@@ -460,18 +460,18 @@ def test_translation_result_exposes_token_helpers() -> None:
 
 
 def test_rss_feed_includes_bilingual_items(tmp_path: Path) -> None:
-    from cn_altdata_brief.render.rss import render_feed
+    from altdata_brief.render.rss import render_feed
 
     briefs = tmp_path / "briefs"
     briefs.mkdir()
     (briefs / "2026-05-17.md").write_text(
-        "# CN AltData Brief — 2026-05-17\n\n"
+        "# AltData Brief — 2026-05-17\n\n"
         "- **新能源汽车**：avg_impact=-0.388 (负向) · 信号=利空\n",
         encoding="utf-8",
     )
     (briefs / "2026-05-17.en.md").write_text(
         "---\nlanguage: \"en\"\ntranslation_status: \"ok\"\n---\n\n"
-        "# CN AltData Brief — 2026-05-17\n\n"
+        "# AltData Brief — 2026-05-17\n\n"
         "- **EV / new energy vehicles**: avg_impact=-0.388 (negative) · signal=bearish\n",
         encoding="utf-8",
     )
@@ -479,8 +479,8 @@ def test_rss_feed_includes_bilingual_items(tmp_path: Path) -> None:
     feed_path = tmp_path / "feed.xml"
     render_feed(briefs_dir=briefs, feed_path=feed_path, site_url="https://example.test")
     xml = feed_path.read_text(encoding="utf-8")
-    assert "cn-altdata-brief:2026-05-17</guid>" in xml or "cn-altdata-brief:2026-05-17<" in xml
-    assert "cn-altdata-brief:2026-05-17:en" in xml
+    assert "altdata-brief:2026-05-17</guid>" in xml or "altdata-brief:2026-05-17<" in xml
+    assert "altdata-brief:2026-05-17:en" in xml
     assert "[EN]" in xml
     assert "/briefs/2026-05-17.html" in xml
     assert "/briefs/2026-05-17.en.html" in xml

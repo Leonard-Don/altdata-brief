@@ -11,11 +11,11 @@ from pathlib import Path
 
 import pytest
 
-from cn_altdata_brief import cli as cli_mod
-from cn_altdata_brief import validate_quality as vq
-from cn_altdata_brief.adapters.base import AdapterPayload
-from cn_altdata_brief.cli import main
-from cn_altdata_brief.validate import (
+from altdata_brief import cli as cli_mod
+from altdata_brief import validate_quality as vq
+from altdata_brief.adapters.base import AdapterPayload
+from altdata_brief.cli import main
+from altdata_brief.validate import (
     EXIT_FAIL,
     EXIT_OK,
     EXIT_WARN,
@@ -584,7 +584,7 @@ def test_required_paths_cache_payload_does_not_audit_default_summary(
         tmp_path / "unrelated_public_summary.json",
         {"schema_version": 1, "providers": {"macro_hf": {}}},
     )
-    from cn_altdata_brief import config as config_mod
+    from altdata_brief import config as config_mod
 
     monkeypatch.setattr(
         config_mod,

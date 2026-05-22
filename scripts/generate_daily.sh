@@ -2,7 +2,7 @@
 # Cron-runnable daily brief generation.
 #
 # Usage (local cron example):
-#   0 1 * * 1-5 /Users/leonardodon/cn-altdata-brief/scripts/generate_daily.sh >> /tmp/cn-altdata-brief.log 2>&1
+#   0 1 * * 1-5 /Users/leonardodon/altdata-brief/scripts/generate_daily.sh >> /tmp/altdata-brief.log 2>&1
 #
 # Exit codes:
 #   0 — brief written successfully
@@ -14,7 +14,7 @@
 # metals, or incomplete CMA verdicts. WARN-level freshness signals (for
 # example a stale ETF snapshot) are logged but do not stop local generation.
 #
-# v0.12 adds an opt-in content-quality pass. Set CN_ALTDATA_BRIEF_STRICT=1
+# v0.12 adds an opt-in content-quality pass. Set ALTDATA_BRIEF_STRICT=1
 # in the environment to add --strict --fail-on-warn to the pre-flight
 # validate call: fingerprint, density, consistency, and schema checks run;
 # any WARN/FAIL or validator runtime error aborts before publishing.
@@ -32,20 +32,20 @@ uv sync --quiet
 
 # Pre-flight: refuse to generate when data-quality preconditions FAIL.
 # WARN-level signals (e.g. stale ETF snapshot) are tolerated locally;
-# CI uses `--fail-on-warn` to be stricter. CN_ALTDATA_BRIEF_STRICT=1
+# CI uses `--fail-on-warn` to be stricter. ALTDATA_BRIEF_STRICT=1
 # additionally runs the v0.12 content-quality checks before generation.
 validate_args=()
-if [[ "${CN_ALTDATA_BRIEF_STRICT:-0}" == "1" ]]; then
+if [[ "${ALTDATA_BRIEF_STRICT:-0}" == "1" ]]; then
     validate_args+=(--strict --fail-on-warn)
     echo "[generate_daily] pre-flight validate --strict --fail-on-warn ..."
 else
     echo "[generate_daily] pre-flight validate ..."
 fi
 set +e
-uv run cn-altdata-brief validate "${validate_args[@]}"
+uv run altdata-brief validate "${validate_args[@]}"
 rc=$?
 set -e
-if [[ "${CN_ALTDATA_BRIEF_STRICT:-0}" == "1" && "$rc" -ne 0 ]]; then
+if [[ "${ALTDATA_BRIEF_STRICT:-0}" == "1" && "$rc" -ne 0 ]]; then
     echo "[generate_daily] strict validate FAILED/WARNED (exit=$rc); aborting before publish."
     exit "$rc"
 fi
@@ -57,4 +57,4 @@ if [ "$rc" -gt 0 ]; then
     echo "[generate_daily] validate emitted warnings (exit=$rc); continuing."
 fi
 
-uv run cn-altdata-brief generate --verbose
+uv run altdata-brief generate --verbose

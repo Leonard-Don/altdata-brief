@@ -4,7 +4,7 @@ We do NOT shell out to scripts/smoke_e2e.sh — the harness has its own
 guarantees (uv sync, the user's shell) that pytest shouldn't depend on.
 Instead, this test exercises the SAME logic the shell script encodes:
 
-* a synthetic scratch dir that mirrors ``CN_ALTDATA_BRIEF_SOURCE_ROOT``;
+* a synthetic scratch dir that mirrors ``ALTDATA_BRIEF_SOURCE_ROOT``;
 * fixture public-summary files rsynced into the per-source paths the
   adapters expect;
 * ``PUBLIC_SUMMARY_PREFERENCE=public_only`` so the adapters MUST hit
@@ -26,14 +26,14 @@ from pathlib import Path
 
 import pytest
 
-from cn_altdata_brief.adapters import (
+from altdata_brief.adapters import (
     ETF512400Adapter,
     IndexResearchAdapter,
     QuantTradingAdapter,
     SuperPricingAdapter,
     build_default_adapters,
 )
-from cn_altdata_brief.config import load_source_config
+from altdata_brief.config import load_source_config
 
 FIXTURES = Path(__file__).parent / "fixtures"
 PUBLIC_FIXTURES = FIXTURES / "public_summary"
@@ -111,21 +111,21 @@ def _seed_source_root(scratch: Path) -> dict[str, Path]:
 
 def _reload_config_with_root(monkeypatch: pytest.MonkeyPatch, root: Path) -> None:
     """Point both the config module and the adapter default paths at ``root``."""
-    monkeypatch.setenv("CN_ALTDATA_BRIEF_SOURCE_ROOT", str(root))
+    monkeypatch.setenv("ALTDATA_BRIEF_SOURCE_ROOT", str(root))
     # The config module's module-level constants are evaluated at import
     # time. Re-resolve them so the adapters' DEFAULT_PUBLIC_SUMMARY picks
     # up our scratch root.
-    from cn_altdata_brief import config as cfg_mod
-    from cn_altdata_brief.adapters import (
+    from altdata_brief import config as cfg_mod
+    from altdata_brief.adapters import (
         etf_512400 as etf_mod,
     )
-    from cn_altdata_brief.adapters import (
+    from altdata_brief.adapters import (
         index_research as ix_mod,
     )
-    from cn_altdata_brief.adapters import (
+    from altdata_brief.adapters import (
         quant_trading as qt_mod,
     )
-    from cn_altdata_brief.adapters import (
+    from altdata_brief.adapters import (
         super_pricing as sp_mod,
     )
 
@@ -188,7 +188,7 @@ def test_smoke_e2e_python_parity(
     _reload_config_with_root(monkeypatch, scratch)
     monkeypatch.setenv("PUBLIC_SUMMARY_PREFERENCE", "public_only")
 
-    from cn_altdata_brief.cli import main as cli_main
+    from altdata_brief.cli import main as cli_main
 
     briefs_dir = tmp_path / "briefs"
     charts_dir = tmp_path / "charts"
@@ -233,8 +233,8 @@ def test_public_summary_generate_keeps_llm_disabled_by_default(
     _reload_config_with_root(monkeypatch, scratch)
     monkeypatch.setenv("PUBLIC_SUMMARY_PREFERENCE", "public_only")
 
-    from cn_altdata_brief import cli as cli_mod
-    from cn_altdata_brief.cli import main as cli_main
+    from altdata_brief import cli as cli_mod
+    from altdata_brief.cli import main as cli_main
 
     def fail_if_called(*args: object, **kwargs: object) -> object:
         raise AssertionError("LLM rephrase should not be called without --with-llm")
@@ -281,8 +281,8 @@ def test_public_summary_generate_with_unavailable_llm_falls_back_to_raw(
     _reload_config_with_root(monkeypatch, scratch)
     monkeypatch.setenv("PUBLIC_SUMMARY_PREFERENCE", "public_only")
 
-    from cn_altdata_brief import cli as cli_mod
-    from cn_altdata_brief.llm import anthropic_client as llm_client
+    from altdata_brief import cli as cli_mod
+    from altdata_brief.llm import anthropic_client as llm_client
 
     monkeypatch.setattr(llm_client, "_sdk_module", lambda: None)
 

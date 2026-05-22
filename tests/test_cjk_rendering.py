@@ -25,7 +25,7 @@ CJK_SAMPLE = "新能源汽车 · 库存信号"
 
 def test_cjk_font_available_and_module_picked_one() -> None:
     """A CJK font is registered, and the charts module detected it."""
-    from cn_altdata_brief.render import charts as charts_mod
+    from altdata_brief.render import charts as charts_mod
 
     available = {f.name for f in fm.fontManager.ttflist}
     cjk_present = bool(set(charts_mod._CJK_CANDIDATES) & available)

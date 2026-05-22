@@ -4,9 +4,9 @@
 > and monthly digests. v0.8+ bilingual CN/EN siblings and v0.10 Atom feeds
 > ride through the same publisher; CN remains the ground truth.
 
-This guide walks through turning `cn-altdata-brief` from a "writes
+This guide walks through turning `altdata-brief` from a "writes
 markdown to my laptop" tool into a publicly readable static site at
-`https://leonard-don.github.io/cn-altdata-brief/`.
+`https://leonard-don.github.io/altdata-brief/`.
 
 The pipeline has three layers:
 
@@ -27,7 +27,7 @@ feeds, and digest markdown are pushed to the public branch.
 ### 1.1 Create the public repo (user action)
 
 ```bash
-gh repo create leonard-don/cn-altdata-brief --public --source=. --remote=origin --push
+gh repo create leonard-don/altdata-brief --public --source=. --remote=origin --push
 ```
 
 If the repo already exists, just ensure the `origin` remote points at
@@ -35,18 +35,18 @@ the public URL:
 
 ```bash
 git remote -v
-# origin  https://github.com/Leonard-Don/cn-altdata-brief.git (fetch)
-# origin  https://github.com/Leonard-Don/cn-altdata-brief.git (push)
+# origin  https://github.com/Leonard-Don/altdata-brief.git (fetch)
+# origin  https://github.com/Leonard-Don/altdata-brief.git (push)
 ```
 
 ### 1.2 Enable GitHub Pages (browser action)
 
-1. Open `https://github.com/Leonard-Don/cn-altdata-brief/settings/pages`.
+1. Open `https://github.com/Leonard-Don/altdata-brief/settings/pages`.
 2. Under **Build and deployment** → **Source**, choose **Deploy from a branch**.
 3. Branch = `gh-pages`, folder = `/ (root)`.
 4. Click **Save**.
 
-The first publish from `cn-altdata-brief publish` creates the
+The first publish from `altdata-brief publish` creates the
 `gh-pages` branch as an orphan. Until that branch exists, the dropdown
 won't list it — run a dry-run first to confirm the plan, then a real
 publish, then enable Pages.
@@ -54,14 +54,14 @@ publish, then enable Pages.
 ### 1.3 Verify locally before going live
 
 ```bash
-uv run cn-altdata-brief publish --dry-run
+uv run altdata-brief publish --dry-run
 ```
 
 You should see a file list including today's `briefs/<date>.md`,
 `briefs/latest.md`, every chart PNG under `output/charts/<date>/`,
 `feed.xml`, `feed.atom`, and any weekly/monthly files under
 `output/digests/`. If anything is missing, run
-`uv run cn-altdata-brief generate` first.
+`uv run altdata-brief generate` first.
 
 ---
 
@@ -69,7 +69,7 @@ You should see a file list including today's `briefs/<date>.md`,
 
 `Daily Brief` in GitHub Actions is a safety smoke by default: scheduled
 runs checkout the four public-source artifacts, run `validate` + `generate`
-under `--source-mode public`, then run `cn-altdata-brief publish --dry-run`
+under `--source-mode public`, then run `altdata-brief publish --dry-run`
 to prove the publish payload is complete without mutating `gh-pages`.
 
 Real publishing remains opt-in:
@@ -84,10 +84,10 @@ launchd 17:00 CST
    ↓
 scripts/run_now.sh
    ├── uv sync --quiet
-   ├── uv run cn-altdata-brief generate --source-mode auto
+   ├── uv run altdata-brief generate --source-mode auto
    └── (if exit=0 and RUN_PUBLISH_AFTER_GENERATE != 0)
         scripts/publish_now.sh
-            └── uv run cn-altdata-brief publish
+            └── uv run altdata-brief publish
                 ├── checkout gh-pages
                 ├── copy brief + charts + RSS/Atom + digests
                 ├── overlay Jekyll template
@@ -127,19 +127,19 @@ needing to know the dated filename in advance.
 ```bash
 PUBLISH_DATE=2026-05-16 bash scripts/publish_now.sh
 # or:
-uv run cn-altdata-brief publish --date 2026-05-16
+uv run altdata-brief publish --date 2026-05-16
 ```
 
 ### Plan-only run (no git mutation)
 
 ```bash
-uv run cn-altdata-brief publish --dry-run
+uv run altdata-brief publish --dry-run
 ```
 
 ### Local commit but no push (offline rehearsal)
 
 ```bash
-uv run cn-altdata-brief publish --no-push
+uv run altdata-brief publish --no-push
 ```
 
 ### Republish from scratch (delete orphan branch)
@@ -150,7 +150,7 @@ single commit:
 ```bash
 git branch -D gh-pages 2>/dev/null || true
 git push origin --delete gh-pages 2>/dev/null || true
-uv run cn-altdata-brief publish     # will recreate as orphan
+uv run altdata-brief publish     # will recreate as orphan
 ```
 
 This rewrites public history — fine for a personal site, never do it
@@ -230,7 +230,7 @@ truth) and English (LLM translation) versions of the same brief.
 # requires the [llm] extra and ANTHROPIC_API_KEY
 uv sync --extra llm
 export ANTHROPIC_API_KEY=...
-uv run cn-altdata-brief generate --with-llm --languages CN,EN
+uv run altdata-brief generate --with-llm --languages CN,EN
 bash scripts/publish_now.sh
 ```
 
@@ -246,7 +246,7 @@ next scheduled run retries.
 ### 7.4 Cost / observability
 
 Each translation call is logged to `output/llm_usage.jsonl` (same
-file as the v0.7 rephrase log). Run `uv run cn-altdata-brief llm-usage`
+file as the v0.7 rephrase log). Run `uv run altdata-brief llm-usage`
 to summarize lifetime / per-status cost. Per-day cost for bilingual is
 ~1500 input + ~1000 output tokens ≈ $0.02 at claude-3-5-sonnet rates.
 
@@ -263,13 +263,13 @@ markdown. Cadence and audience differ from the daily brief:
 | Cadence | Mon-Fri 17:00 | Fridays 18:00 |
 | Surface | `output/briefs/YYYY-MM-DD.md` | `output/digests/YYYY-Wnn.md` |
 | Synthesis | Deterministic + optional LLM rephrase of 本日观察 | Deterministic only (LLM is opt-in EN sibling) |
-| RSS GUID | `cn-altdata-brief:<date>[:en]` | `cn-altdata-brief:digest:<stem>[:en]` |
+| RSS GUID | `altdata-brief:<date>[:en]` | `altdata-brief:digest:<stem>[:en]` |
 | Index column | 简报列表 / Briefs archive | 本周回顾 / Weekly digests |
 
 ### 8.1 What changes operationally
 
 * `output/digests/2026-W20.md` is a new artifact alongside the daily
-  briefs. It is generated by `cn-altdata-brief weekly-digest`.
+  briefs. It is generated by `altdata-brief weekly-digest`.
 * The gh-pages publisher copies every digest it finds in
   `output/digests/` into `gh-pages:digests/`. Daily publishes also
   reuse the same path, so a Friday digest stays online through the
@@ -288,10 +288,10 @@ launchd Fri 18:00         → weekly digest
    ↓
 scripts/weekly_digest_now.sh
    ├── uv sync --quiet
-   ├── uv run cn-altdata-brief weekly-digest
+   ├── uv run altdata-brief weekly-digest
    └── (if exit=0 and RUN_PUBLISH_AFTER_DIGEST != 0)
         scripts/publish_now.sh
-            └── uv run cn-altdata-brief publish
+            └── uv run altdata-brief publish
                 ├── checkout gh-pages
                 ├── copy briefs + charts + RSS/Atom feeds + digests
                 ├── overlay Jekyll template
@@ -304,16 +304,16 @@ scripts/weekly_digest_now.sh
 
 ```bash
 # Generate digest for the current ISO week (Mon..Fri):
-uv run cn-altdata-brief weekly-digest
+uv run altdata-brief weekly-digest
 
 # Generate for a back-dated week:
-uv run cn-altdata-brief weekly-digest --week-of 2026-05-14
+uv run altdata-brief weekly-digest --week-of 2026-05-14
 
 # Raise the recurrence bar (default 3 days) → fewer, stronger themes:
-uv run cn-altdata-brief weekly-digest --recurrence-threshold 4
+uv run altdata-brief weekly-digest --recurrence-threshold 4
 
 # Also emit an EN sibling (uses v0.8 translator + ANTHROPIC_API_KEY):
-uv run cn-altdata-brief weekly-digest --with-llm
+uv run altdata-brief weekly-digest --with-llm
 
 # Run the wrapper script the launchd job uses (without waiting for Friday):
 bash scripts/weekly_digest_now.sh
@@ -332,10 +332,10 @@ bash scripts/install_launchd_macos.sh
 bash scripts/uninstall_launchd_macos.sh
 
 # Verify queued jobs:
-launchctl list | grep cn-altdata
-#  com.leonardodon.cn-altdata-brief
-#  com.leonardodon.cn-altdata-brief.weekly
-#  com.leonardodon.cn-altdata-brief.monthly
+launchctl list | grep altdata
+#  com.leonardodon.altdata-brief
+#  com.leonardodon.altdata-brief.weekly
+#  com.leonardodon.altdata-brief.monthly
 ```
 
 ### 8.5 What a digest contains
@@ -382,19 +382,19 @@ frame*:
 
 ```bash
 # Default: aggregate LAST month (matches the 1st-of-next-month cadence).
-uv run cn-altdata-brief monthly-digest
+uv run altdata-brief monthly-digest
 
 # Explicit month (YYYY-MM):
-uv run cn-altdata-brief monthly-digest --month-of 2026-04
+uv run altdata-brief monthly-digest --month-of 2026-04
 
 # Or a YYYY-MM-DD date inside the target month:
-uv run cn-altdata-brief monthly-digest --month-of 2026-04-15
+uv run altdata-brief monthly-digest --month-of 2026-04-15
 
 # Raise the sustained-theme bar (default 12 days) for harsher filtering:
-uv run cn-altdata-brief monthly-digest --sustained-threshold 15
+uv run altdata-brief monthly-digest --sustained-threshold 15
 
 # Emit an EN sibling alongside the CN file (reuses v0.8 translator):
-uv run cn-altdata-brief monthly-digest --with-llm
+uv run altdata-brief monthly-digest --with-llm
 ```
 
 Outputs:
@@ -413,9 +413,9 @@ every publish.
 
 | Label | Cadence |
 |---|---|
-| `com.leonardodon.cn-altdata-brief` | Mon-Fri 17:00 (daily) |
-| `com.leonardodon.cn-altdata-brief.weekly` | Fri 18:00 (weekly) |
-| `com.leonardodon.cn-altdata-brief.monthly` | 1st of month 17:00 |
+| `com.leonardodon.altdata-brief` | Mon-Fri 17:00 (daily) |
+| `com.leonardodon.altdata-brief.weekly` | Fri 18:00 (weekly) |
+| `com.leonardodon.altdata-brief.monthly` | 1st of month 17:00 |
 
 The monthly plist fires on every `Day=1`. The wrapper script
 (`scripts/monthly_digest_now.sh`) detects Sat/Sun and **defers to the
@@ -446,6 +446,6 @@ page:
 3. **上月回顾 / Monthly digests** — every monthly digest. _(NEW in v0.11)_
 
 The RSS / Atom feeds also include monthly items, with a
-`[Monthly]` title prefix, `cn-altdata-brief:monthly:` GUID, and
+`[Monthly]` title prefix, `altdata-brief:monthly:` GUID, and
 `<category>monthly-digest</category>` so subscribers can filter on
 cadence.

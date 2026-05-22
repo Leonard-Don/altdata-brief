@@ -1,6 +1,6 @@
-# CN AltData Brief — 2026-05-17
+# AltData Brief — 2026-05-17
 
-> 由 `cn-altdata-brief` 在 2026-05-17T01:48:52Z 自动生成，合成自 4 个公开摘要/快照数据源。
+> 由 `altdata-brief` 在 2026-05-17T01:48:52Z 自动生成，合成自 4 个公开摘要/快照数据源。
 > 本简报是公开 alt-data pipeline 的展示窗口，详见 [项目说明](../README.md)。
 
 ---

@@ -59,10 +59,10 @@ def patched_default_paths(
     accidentally read the maintainer's real local data when running
     under ``--source-mode auto``.
     """
-    from cn_altdata_brief.adapters import etf_512400 as etf_mod
-    from cn_altdata_brief.adapters import index_research as ix_mod
-    from cn_altdata_brief.adapters import quant_trading as qt_mod
-    from cn_altdata_brief.adapters import super_pricing as sp_mod
+    from altdata_brief.adapters import etf_512400 as etf_mod
+    from altdata_brief.adapters import index_research as ix_mod
+    from altdata_brief.adapters import quant_trading as qt_mod
+    from altdata_brief.adapters import super_pricing as sp_mod
 
     monkeypatch.setattr(sp_mod, "DEFAULT_CACHE_DIR", super_pricing_cache)
     monkeypatch.setattr(sp_mod, "DEFAULT_PUBLIC_SUMMARY", super_pricing_cache / "missing_public_summary.json")

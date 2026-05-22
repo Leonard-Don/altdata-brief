@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from cn_altdata_brief.render.rss import (
+from altdata_brief.render.rss import (
     MAX_ITEMS,
     _build_item,
     _extract_first_paragraph,
@@ -15,9 +15,9 @@ from cn_altdata_brief.render.rss import (
     render_feed,
 )
 
-SAMPLE_BRIEF = """# CN AltData Brief — 2026-05-17
+SAMPLE_BRIEF = """# AltData Brief — 2026-05-17
 
-> 由 `cn-altdata-brief` 在 2026-05-17T01:54:14Z 自动生成。
+> 由 `altdata-brief` 在 2026-05-17T01:54:14Z 自动生成。
 
 ---
 
@@ -33,7 +33,7 @@ def test_helpers() -> None:
     assert not _looks_like_date("index")
     assert not _looks_like_date("2026-13-99")
     assert _extract_top_headline(SAMPLE_BRIEF) == "新能源汽车"
-    degraded = "# CN AltData Brief — 2026-05-17\n\n> meta\n\n## 1. 政策动向\n\n_数据缺失_"
+    degraded = "# AltData Brief — 2026-05-17\n\n> meta\n\n## 1. 政策动向\n\n_数据缺失_"
     assert _extract_top_headline(degraded) is None
     assert "新能源汽车" in _extract_first_paragraph(SAMPLE_BRIEF)
 
@@ -63,7 +63,7 @@ def test_render_feed_creates_valid_rss(tmp_path: Path) -> None:
     assert root.tag == "rss"
     assert root.attrib["version"] == "2.0"
     channel = root.find("channel")
-    assert channel.findtext("title") == "中国另类数据日报"
+    assert channel.findtext("title") == "多市场另类数据日报"
     assert channel.findtext("link") == "https://example.com"
 
     items = channel.findall("item")
@@ -86,7 +86,7 @@ def test_render_feed_caps_items(tmp_path: Path) -> None:
     for i in range(60):
         date = (base + timedelta(days=i)).strftime("%Y-%m-%d")
         (briefs / f"{date}.md").write_text(
-            f"# CN AltData Brief — {date}\n\n- **X**: y\n", encoding="utf-8"
+            f"# AltData Brief — {date}\n\n- **X**: y\n", encoding="utf-8"
         )
     feed_path = tmp_path / "feed.xml"
     render_feed(briefs_dir=briefs, feed_path=feed_path)
@@ -102,18 +102,18 @@ def test_render_feed_empty_dir_emits_channel(tmp_path: Path) -> None:
         now=datetime(2026, 5, 17, tzinfo=UTC),
     )
     channel = ET.parse(feed_path).getroot().find("channel")
-    assert channel.findtext("title") == "中国另类数据日报"
+    assert channel.findtext("title") == "多市场另类数据日报"
     assert channel.findall("item") == []
 
 
 def test_cli_generate_writes_feed(patched_default_paths: None, tmp_path: Path) -> None:
-    from cn_altdata_brief.cli import main
+    from altdata_brief.cli import main
 
     briefs = tmp_path / "briefs"
     code = main([
         "generate", "--date", "2026-05-17",
         "--briefs-dir", str(briefs), "--charts-dir", str(tmp_path / "charts"),
-        "--no-charts", "--site-url", "https://example.com/cn-altdata-brief",
+        "--no-charts", "--site-url", "https://example.com/altdata-brief",
     ])
     assert code == 0
     feed = tmp_path / "feed.xml"
@@ -125,7 +125,7 @@ def test_cli_generate_writes_feed(patched_default_paths: None, tmp_path: Path) -
 def test_cli_generate_uses_real_default_site_url(
     patched_default_paths: None, tmp_path: Path
 ) -> None:
-    from cn_altdata_brief.cli import DEFAULT_SITE_URL, main
+    from altdata_brief.cli import DEFAULT_SITE_URL, main
 
     briefs = tmp_path / "briefs"
     code = main(
@@ -181,9 +181,9 @@ def test_render_feed_merges_weekly_digests(tmp_path: Path) -> None:
     # The digest item must carry a category=weekly-digest.
     categories = [i.findtext("category") for i in items if i.findtext("category")]
     assert "weekly-digest" in categories
-    # GUID shape: ``cn-altdata-brief:digest:<stem>``.
+    # GUID shape: ``altdata-brief:digest:<stem>``.
     guids = [i.findtext("guid") or "" for i in items]
-    assert any("cn-altdata-brief:digest:2026-W20" in g for g in guids)
+    assert any("altdata-brief:digest:2026-W20" in g for g in guids)
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +242,7 @@ def test_render_atom_feed_summary_and_content_have_no_emphasis_markers(
     tmp_path: Path,
 ) -> None:
     """Atom feed.atom: no <summary> or <content> text contains ``**``."""
-    from cn_altdata_brief.render.rss import render_atom_feed
+    from altdata_brief.render.rss import render_atom_feed
 
     briefs = tmp_path / "briefs"
     briefs.mkdir()
@@ -269,7 +269,7 @@ def test_render_atom_feed_summary_and_content_have_no_emphasis_markers(
 
 def test_atom_date_from_brief_date_handles_all_cadences() -> None:
     """Daily / weekly / monthly stems each map to a distinct Atom stamp."""
-    from cn_altdata_brief.render.rss import _atom_date_from_brief_date
+    from altdata_brief.render.rss import _atom_date_from_brief_date
 
     # Daily — pinned to 09:00 UTC.
     assert _atom_date_from_brief_date("2026-05-20") == "2026-05-20T09:00:00Z"
@@ -321,7 +321,7 @@ def test_render_feed_merges_monthly_digests(tmp_path: Path) -> None:
 
 def test_render_atom_feed_includes_weekly_and_monthly_digests(tmp_path: Path) -> None:
     """v0.11 — the Atom feed carries weekly and monthly digest entries."""
-    from cn_altdata_brief.render.rss import render_atom_feed
+    from altdata_brief.render.rss import render_atom_feed
 
     briefs = tmp_path / "briefs"
     briefs.mkdir()

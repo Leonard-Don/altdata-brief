@@ -8,16 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from cn_altdata_brief import validate as validate_mod
-from cn_altdata_brief.adapters import (
+from altdata_brief import validate as validate_mod
+from altdata_brief.adapters import (
     ETF512400Adapter,
     IndexResearchAdapter,
     QuantTradingAdapter,
     SuperPricingAdapter,
 )
-from cn_altdata_brief.adapters.base import AdapterPayload
-from cn_altdata_brief.cli import main
-from cn_altdata_brief.validate import (
+from altdata_brief.adapters.base import AdapterPayload
+from altdata_brief.cli import main
+from altdata_brief.validate import (
     EXIT_FAIL,
     EXIT_OK,
     EXIT_WARN,

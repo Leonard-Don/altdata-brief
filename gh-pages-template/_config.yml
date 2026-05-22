@@ -1,12 +1,12 @@
-# GitHub Pages configuration for cn-altdata-brief.
+# GitHub Pages configuration for altdata-brief.
 #
 # This file is copied verbatim into the root of the gh-pages branch by
-# `cn-altdata-brief publish`. Edit it here, NOT on the published branch
+# `altdata-brief publish`. Edit it here, NOT on the published branch
 # (which the publisher rewrites on every run).
 
-title: 中国另类数据日报
+title: 多市场另类数据日报
 description: >-
-  基于 4 个公开摘要/快照数据源合成的中国权益市场另类数据研究简报。
+  基于 4 个公开摘要/快照数据源合成的多市场另类数据研究简报。
   每个交易日更新。
 author: Leonard-Don
 lang: zh-CN

@@ -26,7 +26,7 @@ def test_daily_workflow_uses_cli_publisher_contract() -> None:
     """The workflow must reuse the CLI publisher so all v0.11 artifacts ship."""
     text = _workflow_text()
 
-    assert "uv run cn-altdata-brief publish" in text
+    assert "uv run altdata-brief publish" in text
     assert "--date \"$DATE\"" in text
     assert "--dry-run" in text
     assert "inputs.publish == true" in text

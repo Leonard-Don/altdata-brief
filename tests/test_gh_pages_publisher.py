@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from cn_altdata_brief.publish.gh_pages import (
+from altdata_brief.publish.gh_pages import (
     GhPagesPublisher,
     PublishError,
     _render_index_md,
@@ -395,7 +395,7 @@ def test_real_template_enables_realtime_refresh_for_pages() -> None:
         encoding="utf-8"
     )
 
-    assert "cn-altdata-generated-at" in layout
+    assert "altdata-generated-at" in layout
     assert "currentPageSignature" in layout
     assert "data-refresh-status" in layout
     assert "_refresh_probe" in layout
@@ -463,7 +463,7 @@ def test_idempotent_rerun_with_no_changes(
     diff. Freeze the timestamp via monkeypatch so we exercise the
     real "no staged changes → skip commit" path.
     """
-    from cn_altdata_brief.publish import gh_pages as mod
+    from altdata_brief.publish import gh_pages as mod
 
     frozen = "2026-05-17 08:00 UTC"
 

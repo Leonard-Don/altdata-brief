@@ -6,7 +6,7 @@
 # run_now.sh / publish_now.sh:
 #   - cd to project root
 #   - run `uv sync --quiet`
-#   - run `uv run cn-altdata-brief weekly-digest`
+#   - run `uv run altdata-brief weekly-digest`
 #   - if digest succeeded AND RUN_PUBLISH_AFTER_DIGEST != 0, chain
 #     `scripts/publish_now.sh` so the digest lands on gh-pages.
 #   - on non-zero exit at any stage, fire a macOS notification via osascript
@@ -30,10 +30,10 @@ stamp() { date "+%Y-%m-%dT%H:%M:%S%z"; }
 echo "[$(stamp)] weekly_digest_now START (pwd=${PROJECT_ROOT})" | tee -a "${LOG_PATH}"
 
 if ! command -v uv >/dev/null 2>&1; then
-    msg="uv not found in PATH; cn-altdata-brief weekly-digest cannot proceed"
+    msg="uv not found in PATH; altdata-brief weekly-digest cannot proceed"
     echo "[$(stamp)] ERROR ${msg}" | tee -a "${LOG_PATH}"
     if [[ "$(uname -s)" == "Darwin" ]]; then
-        osascript -e "display notification \"${msg}\" with title \"cn-altdata-brief\"" || true
+        osascript -e "display notification \"${msg}\" with title \"altdata-brief\"" || true
     fi
     exit 99
 fi
@@ -42,7 +42,7 @@ uv sync --quiet >>"${LOG_PATH}" 2>&1 || {
     msg="uv sync failed; see ${LOG_PATH}"
     echo "[$(stamp)] ERROR ${msg}" | tee -a "${LOG_PATH}"
     if [[ "$(uname -s)" == "Darwin" ]]; then
-        osascript -e "display notification \"${msg}\" with title \"cn-altdata-brief\"" || true
+        osascript -e "display notification \"${msg}\" with title \"altdata-brief\"" || true
     fi
     exit 1
 }
@@ -53,7 +53,7 @@ if [[ "${DIGEST_WEEK_OF:-}" != "" ]]; then
 fi
 
 set +e
-uv run cn-altdata-brief weekly-digest "${extra_args[@]}" >>"${LOG_PATH}" 2>&1
+uv run altdata-brief weekly-digest "${extra_args[@]}" >>"${LOG_PATH}" 2>&1
 rc=$?
 set -e
 
@@ -63,7 +63,7 @@ else
     msg="weekly-digest failed (exit=${rc}); see ${LOG_PATH}"
     echo "[$(stamp)] ERROR ${msg}" | tee -a "${LOG_PATH}"
     if [[ "$(uname -s)" == "Darwin" ]]; then
-        osascript -e "display notification \"${msg}\" with title \"cn-altdata-brief\"" || true
+        osascript -e "display notification \"${msg}\" with title \"altdata-brief\"" || true
     fi
     exit "${rc}"
 fi

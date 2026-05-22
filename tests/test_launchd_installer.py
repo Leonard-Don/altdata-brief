@@ -66,7 +66,7 @@ def _emit_plist(target_dir: Path) -> Path:
         f"stdout:\n{result.stdout}\n"
         f"stderr:\n{result.stderr}\n"
     )
-    plist = target_dir / "Library" / "LaunchAgents" / "com.leonardodon.cn-altdata-brief.plist"
+    plist = target_dir / "Library" / "LaunchAgents" / "com.leonardodon.altdata-brief.plist"
     assert plist.exists(), f"installer did not produce plist at {plist}"
     return plist
 
@@ -144,7 +144,7 @@ def test_schedule_is_weekdays_at_17_00(tmp_path: Path) -> None:
 def test_install_creates_plist_at_expected_path(tmp_path: Path) -> None:
     plist = _emit_plist(tmp_path)
     expected = (
-        tmp_path / "Library" / "LaunchAgents" / "com.leonardodon.cn-altdata-brief.plist"
+        tmp_path / "Library" / "LaunchAgents" / "com.leonardodon.altdata-brief.plist"
     )
     assert plist == expected
     text = plist.read_text(encoding="utf-8")
@@ -192,9 +192,9 @@ def test_run_now_has_correct_shebang_and_uv_invocation() -> None:
     # POSIX shebang on first line.
     first = text.splitlines()[0]
     assert first == "#!/usr/bin/env bash", f"unexpected shebang: {first!r}"
-    # Must invoke `uv run cn-altdata-brief generate` with --source-mode auto.
-    assert re.search(r"uv run cn-altdata-brief generate --source-mode auto", text), (
-        "run_now.sh should call `uv run cn-altdata-brief generate --source-mode auto`"
+    # Must invoke `uv run altdata-brief generate` with --source-mode auto.
+    assert re.search(r"uv run altdata-brief generate --source-mode auto", text), (
+        "run_now.sh should call `uv run altdata-brief generate --source-mode auto`"
     )
     # Must wire up the macOS notification fallback on failure.
     assert "osascript" in text

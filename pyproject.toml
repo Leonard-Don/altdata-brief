@@ -3,14 +3,14 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cn-altdata-brief"
+name = "altdata-brief"
 version = "0.11.0"
-description = "Daily research brief synthesizing alt-data signals from 4 public China-equity source adapters (bilingual CN/EN)."
+description = "Daily research brief synthesizing alt-data signals from 4 public multi-market source adapters (bilingual CN/EN)."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
 authors = [{ name = "Leonard-Don" }]
-keywords = ["alt-data", "research-brief", "quantitative", "china-equity", "newsletter"]
+keywords = ["alt-data", "research-brief", "quantitative", "multi-market", "newsletter"]
 dependencies = [
     "jinja2>=3.1",
     "matplotlib>=3.8",
@@ -21,7 +21,8 @@ dependencies = [
 ]
 
 [project.scripts]
-cn-altdata-brief = "cn_altdata_brief.cli:main"
+altdata-brief = "altdata_brief.cli:main"
+cn-altdata-brief = "altdata_brief.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -37,7 +38,7 @@ llm = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-cn_altdata_brief = ["py.typed", "llm/industry_mapping.json"]
+altdata_brief = ["py.typed", "llm/industry_mapping.json"]
 
 [tool.ruff]
 line-length = 100

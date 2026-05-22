@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# v0.5 — macOS launchd installer for cn-altdata-brief
+# v0.5 — macOS launchd installer for altdata-brief
 # v0.9 — adds a second LaunchAgent for the Friday weekly digest.
 # v0.11 — adds a third LaunchAgent for the 1st-of-month monthly digest.
 #
 # Installs three LaunchAgents:
 #
-#   1. com.leonardodon.cn-altdata-brief          — Mon-Fri 17:00 daily
-#      brief (`uv run cn-altdata-brief generate --source-mode auto`).
-#   2. com.leonardodon.cn-altdata-brief.weekly   — Friday 18:00 weekly
-#      digest (`uv run cn-altdata-brief weekly-digest`), an hour after
+#   1. com.leonardodon.altdata-brief          — Mon-Fri 17:00 daily
+#      brief (`uv run altdata-brief generate --source-mode auto`).
+#   2. com.leonardodon.altdata-brief.weekly   — Friday 18:00 weekly
+#      digest (`uv run altdata-brief weekly-digest`), an hour after
 #      the daily run so all five briefs already exist on disk.
-#   3. com.leonardodon.cn-altdata-brief.monthly  — 1st-of-month 17:00
-#      monthly digest (`uv run cn-altdata-brief monthly-digest`). The
+#   3. com.leonardodon.altdata-brief.monthly  — 1st-of-month 17:00
+#      monthly digest (`uv run altdata-brief monthly-digest`). The
 #      wrapper script auto-defers Sat/Sun firings to the next Monday.
 #
 # All three jobs append to `output/launchd_runs.log` and fire a macOS
@@ -24,7 +24,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LABEL="com.leonardodon.cn-altdata-brief"
+LABEL="com.leonardodon.altdata-brief"
 WEEKLY_LABEL="${LABEL}.weekly"
 MONTHLY_LABEL="${LABEL}.monthly"
 PLIST_DIR="${HOME}/Library/LaunchAgents"
@@ -255,7 +255,7 @@ if launchctl list | grep -q "${MONTHLY_LABEL}"; then ok_monthly=1; fi
 
 if [[ "${ok_daily}" -eq 1 && "${ok_weekly}" -eq 1 && "${ok_monthly}" -eq 1 ]]; then
     echo "[install_launchd] OK — all three jobs are queued. Verify with:"
-    echo "    launchctl list | grep cn-altdata"
+    echo "    launchctl list | grep altdata"
     echo "    tail -f ${LOG_PATH}"
     echo
     echo "Manual tests (no need to wait for the scheduled fire):"

@@ -5,7 +5,7 @@
 # public landing page. Mirrors the shape of run_now.sh:
 #   - cd to project root
 #   - uv sync --quiet
-#   - uv run cn-altdata-brief publish (honors PUBLISH_EXTRA_ARGS env)
+#   - uv run altdata-brief publish (honors PUBLISH_EXTRA_ARGS env)
 #   - log to output/launchd_runs.log
 #   - macOS notification on failure
 #
@@ -29,10 +29,10 @@ stamp() { date "+%Y-%m-%dT%H:%M:%S%z"; }
 echo "[$(stamp)] publish_now START (pwd=${PROJECT_ROOT})" | tee -a "${LOG_PATH}"
 
 if ! command -v uv >/dev/null 2>&1; then
-    msg="uv not found in PATH; cn-altdata-brief publish cannot proceed"
+    msg="uv not found in PATH; altdata-brief publish cannot proceed"
     echo "[$(stamp)] ERROR ${msg}" | tee -a "${LOG_PATH}"
     if [[ "$(uname -s)" == "Darwin" ]]; then
-        osascript -e "display notification \"${msg}\" with title \"cn-altdata-brief\"" || true
+        osascript -e "display notification \"${msg}\" with title \"altdata-brief\"" || true
     fi
     exit 99
 fi
@@ -41,7 +41,7 @@ uv sync --quiet >>"${LOG_PATH}" 2>&1 || {
     msg="uv sync failed; see ${LOG_PATH}"
     echo "[$(stamp)] ERROR ${msg}" | tee -a "${LOG_PATH}"
     if [[ "$(uname -s)" == "Darwin" ]]; then
-        osascript -e "display notification \"${msg}\" with title \"cn-altdata-brief\"" || true
+        osascript -e "display notification \"${msg}\" with title \"altdata-brief\"" || true
     fi
     exit 1
 }
@@ -63,7 +63,7 @@ if [[ "${PUBLISH_GH_PAGES_BRANCH:-}" != "" ]]; then
 fi
 
 set +e
-uv run cn-altdata-brief publish "${extra_args[@]}" >>"${LOG_PATH}" 2>&1
+uv run altdata-brief publish "${extra_args[@]}" >>"${LOG_PATH}" 2>&1
 rc=$?
 set -e
 
@@ -73,7 +73,7 @@ else
     msg="publish failed (exit=${rc}); see ${LOG_PATH}"
     echo "[$(stamp)] ERROR ${msg}" | tee -a "${LOG_PATH}"
     if [[ "$(uname -s)" == "Darwin" ]]; then
-        osascript -e "display notification \"${msg}\" with title \"cn-altdata-brief\"" || true
+        osascript -e "display notification \"${msg}\" with title \"altdata-brief\"" || true
     fi
 fi
 

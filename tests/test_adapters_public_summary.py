@@ -16,19 +16,19 @@ from pathlib import Path
 
 import pytest
 
-from cn_altdata_brief.adapters import (
+from altdata_brief.adapters import (
     ETF512400Adapter,
     IndexResearchAdapter,
     QuantTradingAdapter,
     SuperPricingAdapter,
 )
-from cn_altdata_brief.adapters.base import AdapterUnavailable
-from cn_altdata_brief.adapters.schema import (
+from altdata_brief.adapters.base import AdapterUnavailable
+from altdata_brief.adapters.schema import (
     MissingSchemaVersionError,
     SchemaContract,
     resolve_schema_version,
 )
-from cn_altdata_brief.config import SourceConfig, load_source_config
+from altdata_brief.config import SourceConfig, load_source_config
 
 FIXTURES = Path(__file__).parent / "fixtures"
 PUBLIC_FIXTURES = FIXTURES / "public_summary"
@@ -498,7 +498,7 @@ class TestSourceConfigEnv:
     def test_env_var_drives_preference(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("CN_ALTDATA_BRIEF_PREFERENCE", "public_only")
+        monkeypatch.setenv("ALTDATA_BRIEF_PREFERENCE", "public_only")
         cfg = load_source_config()
         assert cfg.preference == "public_only"
         assert cfg.public_required is True
@@ -517,16 +517,25 @@ class TestSourceConfigEnv:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("PUBLIC_SUMMARY_PREFERENCE", "public_only")
-        monkeypatch.setenv("CN_ALTDATA_BRIEF_PREFERENCE", "cache_only")
+        monkeypatch.setenv("ALTDATA_BRIEF_PREFERENCE", "cache_only")
         cfg = load_source_config()
         assert cfg.preference == "cache_only"
         assert cfg.allow_cache is True
         assert cfg.public_required is False
 
-    def test_explicit_preference_overrides_env(
+    def test_legacy_cn_preference_still_works(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("CN_ALTDATA_BRIEF_PREFERENCE", "public_only")
+        cfg = load_source_config()
+        assert cfg.preference == "public_only"
+        assert cfg.public_required is True
+        assert cfg.allow_cache is False
+
+    def test_explicit_preference_overrides_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("ALTDATA_BRIEF_PREFERENCE", "public_only")
         cfg = load_source_config(preference="cache_only")
         assert cfg.preference == "cache_only"
         assert cfg.allow_cache is True

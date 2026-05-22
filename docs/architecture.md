@@ -46,7 +46,7 @@
 2. **graceful degradation**：任一适配器抛 `AdapterUnavailable`，对应段落显示「数据缺失」而非整体崩溃。
 3. **deterministic synthesis**：v0.4 仍不引入 LLM。所有「观察」句都来自 `synthesis/observation.py` 的候选信号排序与模板函数，全部可单测。
 4. **per-section sources footer**：每段必须列出上游项目 + cache 文件名 + 时间戳，便于独立核查。
-5. **pre-publish validation**：`cn-altdata-brief validate` 在发布前检查 source 是否缺失、陈旧或结构不完整；`public_summary_freshness` 覆盖 4 个 public artifacts，并在输出末尾打印每个 adapter 的实际解析路径和 mtime。
+5. **pre-publish validation**：`altdata-brief validate` 在发布前检查 source 是否缺失、陈旧或结构不完整；`public_summary_freshness` 覆盖 4 个 public artifacts，并在输出末尾打印每个 adapter 的实际解析路径和 mtime。
 
 ## v0.4 接入的 4 个源
 

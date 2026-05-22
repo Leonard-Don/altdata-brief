@@ -8,22 +8,22 @@ from types import SimpleNamespace
 
 import pytest
 
-from cn_altdata_brief import cli as cli_mod
-from cn_altdata_brief import validate as validate_mod
-from cn_altdata_brief.adapters import (
+from altdata_brief import cli as cli_mod
+from altdata_brief import validate as validate_mod
+from altdata_brief.adapters import (
     etf_512400 as etf_mod,
 )
-from cn_altdata_brief.adapters import (
+from altdata_brief.adapters import (
     index_research as ix_mod,
 )
-from cn_altdata_brief.adapters import (
+from altdata_brief.adapters import (
     quant_trading as qt_mod,
 )
-from cn_altdata_brief.adapters import (
+from altdata_brief.adapters import (
     super_pricing as sp_mod,
 )
-from cn_altdata_brief.cli import main
-from cn_altdata_brief.llm import RephraseResult
+from altdata_brief.cli import main
+from altdata_brief.llm import RephraseResult
 
 
 @pytest.fixture
@@ -503,4 +503,4 @@ def test_cli_help_works(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit):
         main(["--help"])
     out = capsys.readouterr().out
-    assert "cn-altdata-brief" in out
+    assert "altdata-brief" in out

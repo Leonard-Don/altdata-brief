@@ -4,7 +4,7 @@
 
 **feat: v0.11 — monthly digest (1st business day cadence)**
 
-* `src/cn_altdata_brief/digest/monthly.py` — new
+* `src/altdata_brief/digest/monthly.py` — new
   `compose_monthly_digest()` entry point and `MonthlyDigest` /
   `SustainedTheme` / `ReversalEvent` / `ETFMonthlySummary` /
   `WeeklyDigestSummary` dataclasses. Aggregates a full calendar
@@ -28,13 +28,13 @@
   `2026-W18` for weekly). Index page renders **three** tables:
   daily briefs, weekly digests, **monthly digests**.
 * RSS / Atom feeds: monthly digest items use a `[Monthly]` title
-  prefix, `cn-altdata-brief:monthly:` GUID prefix, and
+  prefix, `altdata-brief:monthly:` GUID prefix, and
   `<category>monthly-digest</category>` (RSS) /
   `<category term="monthly-digest"/>` (Atom). Pub date pinned to the
   last day of the month at 17:00 UTC so the merged feed orders
   daily / weekly / monthly chronologically.
 * macOS launchd: `scripts/install_launchd_macos.sh` now installs a
-  **third** LaunchAgent `com.leonardodon.cn-altdata-brief.monthly`
+  **third** LaunchAgent `com.leonardodon.altdata-brief.monthly`
   firing every `Day=1` at 17:00. The uninstaller cleans up all
   three.
 * `scripts/monthly_digest_now.sh` — manual / launchd wrapper that
@@ -68,7 +68,7 @@
 
 **feat: v0.9 — weekly digest generator (Friday cadence)**
 
-* `src/cn_altdata_brief/digest/weekly.py` — new `compose_weekly_digest()`
+* `src/altdata_brief/digest/weekly.py` — new `compose_weekly_digest()`
   entry point and `WeeklyDigest` / `Theme` / `Inflection` /
   `DailyBriefSummary` dataclasses. Parses the deterministic CN daily
   briefs (Mon-Fri) and aggregates into themes (≥3 days),
@@ -91,12 +91,12 @@
   `gh-pages:digests/`. The index renderer gains a second section
   `## 本周回顾 / Weekly digests` with the same CN / EN columns.
 * RSS feed: `render_feed()` accepts an optional `digests_dir`. Weekly
-  digest items use a `[Weekly]` title prefix, `cn-altdata-brief:digest:`
+  digest items use a `[Weekly]` title prefix, `altdata-brief:digest:`
   GUID, and `<category>weekly-digest</category>` so subscribers can
   filter cadence as well as language. Daily `generate` auto-includes
   the `digests/` dir when it exists.
 * macOS launchd: `scripts/install_launchd_macos.sh` now installs a
-  second LaunchAgent `com.leonardodon.cn-altdata-brief.weekly`
+  second LaunchAgent `com.leonardodon.altdata-brief.weekly`
   firing Friday 18:00 (an hour after the daily). The uninstaller
   cleans up both.
 * `scripts/weekly_digest_now.sh` — manual / launchd wrapper that
@@ -136,10 +136,10 @@
 
 **feat: v0.8 — bilingual EN translation via Claude API**
 
-* `src/cn_altdata_brief/llm/translate.py` — new `translate_brief()`
+* `src/altdata_brief/llm/translate.py` — new `translate_brief()`
   entry point and `TranslationResult` dataclass; CN brief stays the
   ground truth and the EN translation is an additive side-channel.
-* `src/cn_altdata_brief/llm/industry_mapping.json` — hand-curated
+* `src/altdata_brief/llm/industry_mapping.json` — hand-curated
   CN→EN mapping for 45 industries, 18 commodities, 6 instruments,
   6 section headings, and 25 high-frequency phrases. Used both as
   glossary in the prompt and as the validation guard target.
@@ -190,7 +190,7 @@
 
 **feat: v0.6 — gh-pages publisher + Jekyll site**
 
-* `src/cn_altdata_brief/publish/gh_pages.py` — new `GhPagesPublisher`
+* `src/altdata_brief/publish/gh_pages.py` — new `GhPagesPublisher`
   class that drives the publish pipeline via subprocess + git CLI
   (no GitPython dependency).
 * `gh-pages-template/` — Jekyll scaffolding (`_config.yml`,

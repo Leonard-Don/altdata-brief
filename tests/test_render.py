@@ -7,26 +7,26 @@ from pathlib import Path
 
 import pytest
 
-from cn_altdata_brief.adapters import (
+from altdata_brief.adapters import (
     ETF512400Adapter,
     IndexResearchAdapter,
     QuantTradingAdapter,
     SuperPricingAdapter,
 )
-from cn_altdata_brief.render import (
+from altdata_brief.render import (
     render_all_charts,
     render_brief_markdown,
     render_feed,
     render_site_index,
 )
-from cn_altdata_brief.synthesis import (
+from altdata_brief.synthesis import (
     synthesize_etf_flow,
     synthesize_industry,
     synthesize_inventory,
     synthesize_observation,
     synthesize_policy,
 )
-from cn_altdata_brief.timefmt import format_beijing_time
+from altdata_brief.timefmt import format_beijing_time
 
 
 def _build_context(
@@ -64,7 +64,7 @@ def test_render_full_brief_contains_all_five_sections(
         super_pricing_cache, quant_trading_cache, index_research_tables, etf_512400_snapshot
     )
     md = render_brief_markdown(context=ctx)
-    assert "# 中国另类数据日报 — 2026-05-17" in md
+    assert "# 多市场另类数据日报 — 2026-05-17" in md
     assert "## 1. 政策动向" in md
     assert "## 2. 库存信号" in md
     assert "## 3. ETF 资金流" in md
@@ -208,25 +208,25 @@ def test_render_site_index_with_briefs(tmp_path: Path) -> None:
 
 def test_render_feed_with_briefs(tmp_path: Path) -> None:
     (tmp_path / "2026-05-17.md").write_text(
-        "# CN AltData Brief — 2026-05-17\n\n- **新能源汽车**：daily summary\n",
+        "# AltData Brief — 2026-05-17\n\n- **新能源汽车**：daily summary\n",
         encoding="utf-8",
     )
     (tmp_path / "2026-05-16.md").write_text("# older", encoding="utf-8")
     feed = render_feed(
         briefs_dir=tmp_path,
         feed_path=tmp_path / "feed.xml",
-        site_url="https://example.com/cn-altdata-brief",
+        site_url="https://example.com/altdata-brief",
     )
     text = feed.read_text(encoding="utf-8")
     assert "<rss version=\"2.0\"" in text
-    assert "https://example.com/cn-altdata-brief/briefs/2026-05-17.html" in text
+    assert "https://example.com/altdata-brief/briefs/2026-05-17.html" in text
     assert "daily summary" in text
 
 
 def test_render_strict_undefined_catches_missing_keys(tmp_path: Path) -> None:
     from jinja2.exceptions import UndefinedError
 
-    from cn_altdata_brief.render.markdown import render_brief_markdown
+    from altdata_brief.render.markdown import render_brief_markdown
 
     # missing 'observation' should blow up loudly (strict undefined)
     with pytest.raises(UndefinedError):
@@ -291,7 +291,7 @@ def test_render_brief_body_uses_beijing_time_for_reader_facing_stamps(
         super_pricing_cache, quant_trading_cache, index_research_tables, etf_512400_snapshot
     )
     md = render_brief_markdown(context=ctx)
-    # The header line "由 cn-altdata-brief 在 ..." is now Beijing time.
+    # The header line "由 altdata-brief 在 ..." is now Beijing time.
     assert "北京时间" in md
     # The frontmatter ``generated_at:`` line keeps the ISO-Z form so
     # RSS/Atom/OG consumers still see machine-readable timestamps.
@@ -304,7 +304,7 @@ def test_render_brief_body_uses_beijing_time_for_reader_facing_stamps(
 
 
 def test_industry_row_with_zero_impact_and_zero_mentions_renders_no_policy_marker() -> None:
-    from cn_altdata_brief.synthesis.industry import _format_row
+    from altdata_brief.synthesis.industry import _format_row
 
     out = _format_row(
         {
@@ -321,7 +321,7 @@ def test_industry_row_with_zero_impact_and_zero_mentions_renders_no_policy_marke
 
 
 def test_industry_row_with_real_policy_data_keeps_existing_format() -> None:
-    from cn_altdata_brief.synthesis.industry import _format_row
+    from altdata_brief.synthesis.industry import _format_row
 
     out = _format_row(
         {
@@ -521,7 +521,7 @@ def test_brief_md_renders_source_line_as_paragraph_not_heading() -> None:
 
         pytest.skip("python-markdown not installed in this environment")
 
-    from cn_altdata_brief.render.markdown import render_brief_markdown
+    from altdata_brief.render.markdown import render_brief_markdown
 
     md = render_brief_markdown(context=_minimal_brief_context())
     html = md_lib.markdown(md, extensions=["extra"])

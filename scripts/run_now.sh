@@ -3,7 +3,7 @@
 # v0.6 — also chains `publish` after a successful generate, gated by
 #        RUN_PUBLISH_AFTER_GENERATE (default: 1).
 # v0.12 — optional content-quality pre-publish guard. When
-#         CN_ALTDATA_BRIEF_STRICT=1, runs `validate --strict` after
+#         ALTDATA_BRIEF_STRICT=1, runs `validate --strict` after
 #         generate; a FAIL aborts the publish step (the locally generated
 #         brief is still kept on disk for inspection).
 #
@@ -15,8 +15,8 @@
 # Behaviour:
 #   - cd to project root
 #   - run `uv sync --quiet` (cheap idempotent step)
-#   - run `uv run cn-altdata-brief generate --source-mode auto`
-#   - if CN_ALTDATA_BRIEF_STRICT=1, run `validate --strict` as a
+#   - run `uv run altdata-brief generate --source-mode auto`
+#   - if ALTDATA_BRIEF_STRICT=1, run `validate --strict` as a
 #     pre-publish guard. Exit code 2 (any FAIL) aborts the publish step.
 #   - if generate succeeded AND RUN_PUBLISH_AFTER_GENERATE != 0 AND the
 #     strict guard didn't block, chain `scripts/publish_now.sh` (which
@@ -27,7 +27,7 @@
 # Opt-outs / opt-ins:
 #   RUN_PUBLISH_AFTER_GENERATE=0 bash scripts/run_now.sh
 #       — skip the gh-pages publish step (useful when offline)
-#   CN_ALTDATA_BRIEF_STRICT=1 bash scripts/run_now.sh
+#   ALTDATA_BRIEF_STRICT=1 bash scripts/run_now.sh
 #       — enable the v0.12 content-quality strict guard
 set -uo pipefail
 
@@ -42,10 +42,10 @@ stamp() { date "+%Y-%m-%dT%H:%M:%S%z"; }
 echo "[$(stamp)] run_now START (pwd=${PROJECT_ROOT})" | tee -a "${LOG_PATH}"
 
 if ! command -v uv >/dev/null 2>&1; then
-    msg="uv not found in PATH; cn-altdata-brief daily run cannot proceed"
+    msg="uv not found in PATH; altdata-brief daily run cannot proceed"
     echo "[$(stamp)] ERROR ${msg}" | tee -a "${LOG_PATH}"
     if [[ "$(uname -s)" == "Darwin" ]]; then
-        osascript -e "display notification \"${msg}\" with title \"cn-altdata-brief\"" || true
+        osascript -e "display notification \"${msg}\" with title \"altdata-brief\"" || true
     fi
     exit 99
 fi
@@ -54,13 +54,13 @@ uv sync --quiet >>"${LOG_PATH}" 2>&1 || {
     msg="uv sync failed; see ${LOG_PATH}"
     echo "[$(stamp)] ERROR ${msg}" | tee -a "${LOG_PATH}"
     if [[ "$(uname -s)" == "Darwin" ]]; then
-        osascript -e "display notification \"${msg}\" with title \"cn-altdata-brief\"" || true
+        osascript -e "display notification \"${msg}\" with title \"altdata-brief\"" || true
     fi
     exit 1
 }
 
 set +e
-uv run cn-altdata-brief generate --source-mode auto >>"${LOG_PATH}" 2>&1
+uv run altdata-brief generate --source-mode auto >>"${LOG_PATH}" 2>&1
 rc=$?
 set -e
 
@@ -70,28 +70,28 @@ else
     msg="generate failed (exit=${rc}); see ${LOG_PATH}"
     echo "[$(stamp)] ERROR ${msg}" | tee -a "${LOG_PATH}"
     if [[ "$(uname -s)" == "Darwin" ]]; then
-        osascript -e "display notification \"${msg}\" with title \"cn-altdata-brief\"" || true
+        osascript -e "display notification \"${msg}\" with title \"altdata-brief\"" || true
     fi
     exit "${rc}"
 fi
 
 # v0.12 — pre-publish content-quality guard.
-# When CN_ALTDATA_BRIEF_STRICT=1, run the v0.12 quality checks with
+# When ALTDATA_BRIEF_STRICT=1, run the v0.12 quality checks with
 # --fail-on-warn. Any non-zero exit (WARN, FAIL, or validator runtime
 # failure) aborts the publish step so we don't ship a brief whose inputs
 # failed structural / content sanity. The locally generated brief is kept
 # on disk so the operator can inspect and decide.
 strict_block_publish=0
-if [[ "${CN_ALTDATA_BRIEF_STRICT:-0}" == "1" ]]; then
+if [[ "${ALTDATA_BRIEF_STRICT:-0}" == "1" ]]; then
     set +e
-    uv run cn-altdata-brief validate --strict --fail-on-warn >>"${LOG_PATH}" 2>&1
+    uv run altdata-brief validate --strict --fail-on-warn >>"${LOG_PATH}" 2>&1
     strict_rc=$?
     set -e
     if [[ "${strict_rc}" -ne 0 ]]; then
         msg="validate --strict FAILED (exit=${strict_rc}); aborting publish, brief kept on disk"
         echo "[$(stamp)] ERROR ${msg}" | tee -a "${LOG_PATH}"
         if [[ "$(uname -s)" == "Darwin" ]]; then
-            osascript -e "display notification \"${msg}\" with title \"cn-altdata-brief\"" || true
+            osascript -e "display notification \"${msg}\" with title \"altdata-brief\"" || true
         fi
         strict_block_publish=1
     else
