@@ -14,6 +14,15 @@
 
 `altdata-brief` produces deterministic research briefs over multi-market alt-data — currently synthesized from four public-source adapters I maintain. The goal is a reusable research-automation surface for source packs across markets.
 
+<p align="center">
+  <img src="docs/sample_charts/policy_impact.png" alt="Policy impact sample chart" width="48%" />
+  <img src="docs/sample_charts/inventory_change.png" alt="Inventory signal sample chart" width="48%" />
+</p>
+<p align="center">
+  <img src="docs/sample_charts/etf_nav.png" alt="ETF NAV sample chart" width="48%" />
+  <img src="docs/sample_charts/industry_heat.png" alt="Industry heat sample chart" width="48%" />
+</p>
+
 ---
 
 ## 1. 这是什么 / What this is
