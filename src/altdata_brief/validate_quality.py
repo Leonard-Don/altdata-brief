@@ -1179,6 +1179,13 @@ _PLACEHOLDER_PATH_ALLOWLIST: tuple[str, ...] = (
     "schema_version",
     "source_codebase_version",
     "baseline_version",
+    # Adapter provenance path fields are operator/debug metadata. They can
+    # legitimately contain tmp dirs such as ``test_public_summary`` or
+    # ``placeholder-fixture`` and should not be treated as published prose.
+    "public_summary_path",
+    "cache_path",
+    "verdicts_path",
+    "pap_path",
 )
 
 

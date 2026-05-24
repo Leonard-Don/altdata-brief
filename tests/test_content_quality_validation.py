@@ -1120,6 +1120,32 @@ def test_placeholder_allowlist_paper_trading_smoke_profile() -> None:
     )
 
 
+def test_placeholder_allowlist_adapter_provenance_paths() -> None:
+    """Adapter path metadata may contain fixture/test words without failing."""
+    payloads: dict[str, AdapterPayload | None] = {
+        "index_research": _payload(
+            "index_research",
+            {
+                "public_summary_path": "/tmp/placeholder-fixture/test_summary.json",
+                "verdicts_path": "/tmp/test_public_summary/cma.csv",
+                "pap_path": "/tmp/TODO-fixture/pap.csv",
+                "verdicts": [{"hid": "H1", "name": "信息泄露与预运行"}],
+            },
+        ),
+        "quant_trading": _payload(
+            "quant_trading",
+            {
+                "cache_path": "/tmp/test_cache/quant_summary.json",
+                "industries": [{"industry": "新能源汽车", "policy_signal": "neutral"}],
+            },
+        ),
+    }
+
+    r = vq.check_placeholder_detector(payloads)
+
+    assert r.level == INFO, f"provenance paths should be allowlisted; got {r.message}"
+
+
 def test_placeholder_cli_strict_fails_on_test_industry(
     patched_default_paths: None,
     tmp_path: Path,
