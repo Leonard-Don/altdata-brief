@@ -285,6 +285,54 @@ class TestIndexResearchPublicSummary:
         assert v[0]["key_value"] == pytest.approx(0.8748)
         assert payload.data["pap_changes"] == []
 
+    def test_public_summary_figure_links_ignore_path_traversal(
+        self, tmp_path: Path
+    ) -> None:
+        """Figure metadata is public JSON, so paths are sanitized to basenames."""
+        import json
+
+        figure_dir = tmp_path / "figures"
+        figure_dir.mkdir()
+        (figure_dir / "safe.png").write_bytes(b"safe")
+        (figure_dir / "published.png").write_bytes(b"published")
+        outside = tmp_path / "outside.png"
+        outside.write_bytes(b"outside")
+
+        public_path = tmp_path / "ix.json"
+        public_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "generated_at": "2026-05-17T02:00:00+00:00",
+                    "verdicts": [],
+                    "figures": [
+                        "safe.png",
+                        "../outside.png",
+                        str(outside.resolve()),
+                    ],
+                    "figures_published": [
+                        "results/figures/published.png",
+                        "../figures/safe.png",
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        adapter = IndexResearchAdapter(
+            table_dir=tmp_path / "no_table",
+            figure_dir=figure_dir,
+            public_summary=public_path,
+            config=SourceConfig(preference="public_only"),
+        )
+        payload = adapter.fetch()
+
+        assert payload.files == [figure_dir / "safe.png", figure_dir / "published.png"]
+        assert payload.data["figure_links"] == [
+            str(figure_dir / "safe.png"),
+            str(figure_dir / "published.png"),
+        ]
+
 
 # ----------------------------------------------------------------------
 # Quant trading (v0.4)

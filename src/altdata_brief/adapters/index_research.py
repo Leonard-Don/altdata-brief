@@ -414,6 +414,24 @@ def _parse_pap_block(payload: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _safe_figure_basename(value: str) -> str | None:
+    """Return a safe figure basename from public-summary metadata.
+
+    Upstream ``figures`` is documented as a basename list, but public JSON is
+    still treated as untrusted input: absolute paths and ``../`` traversal must
+    not be allowed to redirect the adapter outside ``figure_dir``.  For
+    repo-relative ``figures_published`` values, keeping only the basename is the
+    intended behavior.
+    """
+    raw = value.strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    if path.is_absolute() or ".." in path.parts:
+        return None
+    return path.name
+
+
 def _resolve_figure_links(
     figure_dir: Path,
     figures_basenames: Any,
@@ -422,24 +440,30 @@ def _resolve_figure_links(
     """Resolve a list of figure paths from either ``figures`` or
     ``figures_published`` keys.
 
-    * ``figures`` carries plain basenames — joined with ``figure_dir``.
+    * ``figures`` carries plain basenames — sanitized then joined with
+      ``figure_dir``.
     * ``figures_published`` carries repo-relative paths (e.g.
-      ``results/figures/foo.png``) — we strip the leading ``results/figures/``
-      and join with ``figure_dir``.
+      ``results/figures/foo.png``) — sanitized to basename and joined with
+      ``figure_dir``.
     """
     links: list[Path] = []
     if isinstance(figures_basenames, list):
         for fname in figures_basenames:
             if not isinstance(fname, str):
                 continue
-            candidate = figure_dir / fname
+            basename = _safe_figure_basename(fname)
+            if basename is None:
+                continue
+            candidate = figure_dir / basename
             if candidate.exists():
                 links.append(candidate)
     if isinstance(figures_published, list):
         for rel in figures_published:
             if not isinstance(rel, str):
                 continue
-            basename = Path(rel).name
+            basename = _safe_figure_basename(rel)
+            if basename is None:
+                continue
             candidate = figure_dir / basename
             if candidate.exists() and candidate not in links:
                 links.append(candidate)
