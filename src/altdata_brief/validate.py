@@ -249,9 +249,16 @@ def _check_super_pricing_provider_freshness(payload: AdapterPayload | None) -> C
     if missing or stale:
         parts: list[str] = []
         if stale:
-            parts.append("stale: " + ", ".join(stale))
+            stale_details = []
+            for provider in stale:
+                provider_detail = per_provider[provider]
+                stale_details.append(
+                    f"{provider}=age={provider_detail['age_hours']}h "
+                    f"ts={provider_detail['timestamp']}"
+                )
+            parts.append("stale: " + ", ".join(stale_details))
         if missing:
-            parts.append("missing timestamp: " + ", ".join(missing))
+            parts.append("missing timestamp: " + ", ".join(f"{p}=ts_missing" for p in missing))
         return CheckResult(
             name=name,
             level=FAIL,
@@ -367,7 +374,8 @@ def _check_etf_required_source_health(payload: AdapterPayload | None) -> CheckRe
         issues.append(f"quote trade date unparsable ({trade_date_raw!r})")
     elif quote_age_days is not None and quote_age_days > MAX_ETF_QUOTE_AGE_DAYS:
         issues.append(
-            f"quote trade date stale ({quote_age_days}d > {MAX_ETF_QUOTE_AGE_DAYS}d)"
+            f"quote trade date stale (age={quote_age_days}d > {MAX_ETF_QUOTE_AGE_DAYS}d, "
+            f"trade_date={trade_dt.isoformat()}, today_utc={today.isoformat()})"
         )
 
     detail = {

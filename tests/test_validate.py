@@ -117,6 +117,25 @@ def test_provider_freshness_blocks_stale_inner_timestamps() -> None:
     assert "stale" in result.message
 
 
+def test_provider_freshness_stale_message_includes_age_and_timestamp() -> None:
+    """Daily Actions logs should expose which inner provider timestamp is stale."""
+    stale = (datetime.now(UTC) - timedelta(hours=48)).replace(microsecond=0).isoformat()
+    payload = _payload(
+        {
+            "policy_radar": {"timestamp": stale},
+            "macro_hf": {"timestamp": stale},
+        }
+    )
+
+    result = validate_mod._check_super_pricing_provider_freshness(payload)
+
+    assert result.level == FAIL
+    assert "policy_radar=" in result.message
+    assert "macro_hf=" in result.message
+    assert "age=" in result.message
+    assert stale in result.message
+
+
 def test_provider_freshness_accepts_recent_inner_timestamps() -> None:
     fresh = datetime.now(UTC).replace(microsecond=0).isoformat()
     payload = _payload(
@@ -145,6 +164,29 @@ def test_etf_required_source_health_blocks_stale_quote() -> None:
     result = validate_mod._check_etf_required_source_health(payload)
     assert result.level == FAIL
     assert "quote source degraded" in result.message
+
+
+def test_etf_required_source_health_stale_quote_message_includes_dates() -> None:
+    """Daily Actions logs should identify the stale ETF quote date and current date."""
+    today = datetime.now(UTC).date()
+    stale_trade_date = (today - timedelta(days=6)).isoformat()
+    payload = _payload(
+        {
+            "trade_date": stale_trade_date,
+            "source_health": {
+                "required_total": 4,
+                "required_ok": 4,
+                "quote_ok": True,
+                "quote_fallback": False,
+            },
+        }
+    )
+
+    result = validate_mod._check_etf_required_source_health(payload)
+
+    assert result.level == FAIL
+    assert f"trade_date={stale_trade_date}" in result.message
+    assert f"today_utc={today.isoformat()}" in result.message
 
 
 def test_etf_required_source_health_accepts_fresh_quote() -> None:
