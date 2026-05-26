@@ -183,6 +183,11 @@
         }
       }
 
+      if (!/^https?:$/.test(window.location.protocol)) {
+        setStatus("本地预览 · 自动刷新关闭", "");
+        return;
+      }
+
       async function checkForUpdates() {
         try {
           var probe = new URL(window.location.href);

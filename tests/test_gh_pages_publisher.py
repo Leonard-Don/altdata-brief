@@ -328,6 +328,8 @@ def test_index_md_renders_5_row_table() -> None:
     assert "data-refresh-fingerprint" in body
     assert "_refresh_probe" in body
     assert "nextSignature && currentSignature" in body
+    assert "本地预览 · 自动刷新关闭" in body
+    assert "window.location.protocol" in body
     # All 5 dates appear as table rows
     rows = [
         line
@@ -400,6 +402,8 @@ def test_real_template_enables_realtime_refresh_for_pages() -> None:
     assert "data-refresh-status" in layout
     assert "_refresh_probe" in layout
     assert "nextSignature && currentSignature" in layout
+    assert "本地预览 · 自动刷新关闭" in layout
+    assert "window.location.protocol" in layout
     assert "hash.toString" not in layout
     assert "path: digests" in config
     assert "layout: brief" in config
