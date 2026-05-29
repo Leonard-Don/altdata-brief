@@ -40,8 +40,8 @@ echo "[smoke_e2e] scratch dir: $SCRATCH"
 # ----------------------------------------------------------------------
 # 1. Lay out source-repo skeletons inside the scratch dir.
 # ----------------------------------------------------------------------
-mkdir -p "$SCRATCH/PycharmProjects/super-pricing-system/data/public"
-mkdir -p "$SCRATCH/PycharmProjects/quant-trading-system/data/public"
+mkdir -p "$SCRATCH/super-pricing-system/data/public"
+mkdir -p "$SCRATCH/quant-trading-system/data/public"
 mkdir -p "$SCRATCH/index-inclusion-research/data/public"
 mkdir -p "$SCRATCH/ETF 512400/src/data"
 
@@ -56,9 +56,9 @@ if [ "${SMOKE_FIXTURE:-0}" = "1" ]; then
     QT_SRC="$PROJECT_ROOT/tests/fixtures/public_summary/quant_summary.json"
     ETF_SRC="$PROJECT_ROOT/tests/fixtures/etf_512400/liveSnapshot.json"
 else
-    SP_SRC="/Users/leonardodon/PycharmProjects/super-pricing-system/data/public/alt_data_summary.json"
+    SP_SRC="/Users/leonardodon/super-pricing-system/data/public/alt_data_summary.json"
     IX_SRC="/Users/leonardodon/index-inclusion-research/data/public/index_research_summary.json"
-    QT_SRC="/Users/leonardodon/PycharmProjects/quant-trading-system/data/public/quant_summary.json"
+    QT_SRC="/Users/leonardodon/quant-trading-system/data/public/quant_summary.json"
     ETF_SRC="/Users/leonardodon/ETF 512400/src/data/liveSnapshot.json"
 fi
 
@@ -75,9 +75,9 @@ copy_if_exists() {
 }
 
 echo "[smoke_e2e] syncing public summaries:"
-copy_if_exists "$SP_SRC"  "$SCRATCH/PycharmProjects/super-pricing-system/data/public/alt_data_summary.json" "super_pricing"
+copy_if_exists "$SP_SRC"  "$SCRATCH/super-pricing-system/data/public/alt_data_summary.json" "super_pricing"
 copy_if_exists "$IX_SRC"  "$SCRATCH/index-inclusion-research/data/public/index_research_summary.json"        "index_research"
-copy_if_exists "$QT_SRC"  "$SCRATCH/PycharmProjects/quant-trading-system/data/public/quant_summary.json"     "quant_trading"
+copy_if_exists "$QT_SRC"  "$SCRATCH/quant-trading-system/data/public/quant_summary.json"     "quant_trading"
 copy_if_exists "$ETF_SRC" "$SCRATCH/ETF 512400/src/data/liveSnapshot.json"                                    "etf_512400"
 
 # In fixture mode the committed public summaries carry frozen timestamps —
@@ -87,7 +87,7 @@ copy_if_exists "$ETF_SRC" "$SCRATCH/ETF 512400/src/data/liveSnapshot.json"      
 # Production mode (real upstreams) keeps the original timestamps; the
 # upstream apps refresh them daily.
 if [ "${SMOKE_FIXTURE:-0}" = "1" ]; then
-    SP_DEST="$SCRATCH/PycharmProjects/super-pricing-system/data/public/alt_data_summary.json"
+    SP_DEST="$SCRATCH/super-pricing-system/data/public/alt_data_summary.json"
     ETF_DEST="$SCRATCH/ETF 512400/src/data/liveSnapshot.json"
     if [ -f "$SP_DEST" ] || [ -f "$ETF_DEST" ]; then
         uv run python - <<PY
