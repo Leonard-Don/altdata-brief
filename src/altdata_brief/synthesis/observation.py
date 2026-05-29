@@ -4,12 +4,14 @@ v0.2 rewrites the v0.1 rule-based observation into a journalistic
 *framing → contextualize → follow-up* sequence:
 
 * sentence 1 — "今日核心信号是 X" (the headline)
-* sentence 2 — "对比近 7 日，X …" (context vs. mock baseline)
+* sentence 2 — "对比近 7 日，X …" (context vs. the rolling baseline)
 * sentence 3 — "若该信号延续 N 日，可重点观察 X 板块/品种" (research follow-up)
 
-The wording is still deterministic (no LLM). Baselines come from
-:mod:`altdata_brief.synthesis.baseline` constants — v0.3 will swap
-those for the real super-pricing narrative archive.
+The wording is deterministic (no LLM). Baselines are resolved per
+observation from :mod:`altdata_brief.synthesis.baseline`: v0.3 wires the
+**policy-impact** baseline to super-pricing's real narrative archive, with
+the remaining baselines (and any run without the archive) falling back to
+the module constants.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from altdata_brief.synthesis.baseline import (
     SIGNAL_PERSISTENCE_DAYS,
     describe_intensity,
     load_recent_history,
+    resolve_baseline,
 )
 
 
@@ -38,6 +41,37 @@ class _Candidate:
     framing: str
     context: str
     action: str
+
+
+@dataclass(slots=True, frozen=True)
+class _Baselines:
+    """Per-section "近 7 日" baselines, resolved once per observation.
+
+    Built from :func:`load_recent_history` via :func:`resolve_baseline`, so
+    each field is the real rolling mean when super-pricing's archive supplies
+    it and the hand-tuned constant otherwise. Today only ``policy_impact`` is
+    archive-backed (see :mod:`altdata_brief.synthesis.baseline`).
+    """
+
+    policy_impact: float
+    metal_spread: float
+    etf_nav: float
+    industry_heat: float
+
+    @classmethod
+    def from_history(cls, history: dict[str, Any] | None) -> _Baselines:
+        return cls(
+            policy_impact=resolve_baseline(
+                history, "policy_impact_7d", BASELINE_POLICY_IMPACT_7D
+            ),
+            metal_spread=resolve_baseline(
+                history, "metal_spread_7d", BASELINE_METAL_SPREAD_7D
+            ),
+            etf_nav=resolve_baseline(history, "etf_nav_7d", BASELINE_ETF_NAV_VOL_7D),
+            industry_heat=resolve_baseline(
+                history, "industry_heat_7d", BASELINE_INDUSTRY_HEAT_7D
+            ),
+        )
 
 
 _BOLDED_RE = re.compile(r"\*\*([^*]+)\*\*")
@@ -82,30 +116,32 @@ def synthesize_observation(
     Degrades gracefully — missing source = fewer candidates, never an
     exception.
     """
-    history = load_recent_history()  # v0.3 hook; today returns None
-    _ = history  # constants below already encode v0.2 baselines
+    # v0.3: resolve real rolling baselines from super-pricing's narrative
+    # archive once, then thread them through the candidate builders. Absent
+    # archive (CI, fresh clones) → each baseline falls back to its constant.
+    baselines = _Baselines.from_history(load_recent_history())
 
     candidates: list[_Candidate] = []
     sources: list[str] = []
 
     if super_payload is not None:
         sources.append(super_payload.cache_label)
-        cand = _policy_candidate(super_payload)
+        cand = _policy_candidate(super_payload, baselines)
         if cand:
             candidates.append(cand)
-        cand = _inventory_candidate(super_payload)
+        cand = _inventory_candidate(super_payload, baselines)
         if cand:
             candidates.append(cand)
 
     if etf_payload is not None:
         sources.append(etf_payload.cache_label)
-        cand = _etf_candidate(etf_payload)
+        cand = _etf_candidate(etf_payload, baselines)
         if cand:
             candidates.append(cand)
 
     if quant_payload is not None:
         sources.append(quant_payload.cache_label)
-        cand = _industry_candidate(quant_payload)
+        cand = _industry_candidate(quant_payload, baselines)
         if cand:
             candidates.append(cand)
 
@@ -147,7 +183,7 @@ def synthesize_observation(
 # -- per-source candidate builders -------------------------------------
 
 
-def _policy_candidate(payload: AdapterPayload) -> _Candidate | None:
+def _policy_candidate(payload: AdapterPayload, baselines: _Baselines) -> _Candidate | None:
     policy = payload.data.get("policy_radar", {}) or {}
     ranked = policy.get("industry_signals", []) or []
     if not ranked:
@@ -164,9 +200,9 @@ def _policy_candidate(payload: AdapterPayload) -> _Candidate | None:
         f"今日核心信号是 **{industry}** 的政策口径{direction}收敛"
         f"（政策影响={impact:+.3f}，提及次数={mentions}）。"
     )
-    intensity = describe_intensity(abs(impact), BASELINE_POLICY_IMPACT_7D)
+    intensity = describe_intensity(abs(impact), baselines.policy_impact)
     context = (
-        f"对比近 7 日政策影响基线≈{BASELINE_POLICY_IMPACT_7D:.2f}，"
+        f"对比近 7 日政策影响基线≈{baselines.policy_impact:.2f}，"
         f"该信号强度{intensity}，政策雷达当批次累计 {policy.get('policy_count', 0)} 条记录。"
     )
     action = (
@@ -181,7 +217,7 @@ def _policy_candidate(payload: AdapterPayload) -> _Candidate | None:
     )
 
 
-def _inventory_candidate(payload: AdapterPayload) -> _Candidate | None:
+def _inventory_candidate(payload: AdapterPayload, baselines: _Baselines) -> _Candidate | None:
     macro = payload.data.get("macro_hf", {}) or {}
     metals = macro.get("metals", []) or []
     if len(metals) < 2:
@@ -198,9 +234,9 @@ def _inventory_candidate(payload: AdapterPayload) -> _Candidate | None:
         f"({leader[0]:+.2f}%) 与 **{laggard[1].get('name_cn')}** "
         f"({laggard[0]:+.2f}%) 周价差 {spread:.2f}%。"
     )
-    intensity = describe_intensity(spread, BASELINE_METAL_SPREAD_7D)
+    intensity = describe_intensity(spread, baselines.metal_spread)
     context = (
-        f"对比近 7 日基线均值 {BASELINE_METAL_SPREAD_7D:.2f}%，"
+        f"对比近 7 日基线均值 {baselines.metal_spread:.2f}%，"
         f"今日分化{intensity}，提示上下游需求节奏正在切换。"
     )
     action = (
@@ -216,7 +252,7 @@ def _inventory_candidate(payload: AdapterPayload) -> _Candidate | None:
     )
 
 
-def _etf_candidate(payload: AdapterPayload) -> _Candidate | None:
+def _etf_candidate(payload: AdapterPayload, baselines: _Baselines) -> _Candidate | None:
     nav = payload.data.get("nav", {}) or {}
     daily = nav.get("daily_return")
     if daily is None:
@@ -232,9 +268,9 @@ def _etf_candidate(payload: AdapterPayload) -> _Candidate | None:
         f"今日核心信号是 ETF 512400 日内 NAV {direction} {abs(pct):.2f}%，"
         f"数据源评级 **{health}**。"
     )
-    intensity = describe_intensity(abs(daily), BASELINE_ETF_NAV_VOL_7D)
+    intensity = describe_intensity(abs(daily), baselines.etf_nav)
     context = (
-        f"对比近 7 日波动均值 ≈{BASELINE_ETF_NAV_VOL_7D * 100:.2f}%，"
+        f"对比近 7 日波动均值 ≈{baselines.etf_nav * 100:.2f}%，"
         f"今日波幅{intensity}；商品驱动子源 "
         f"{(payload.data.get('commodity_drivers') or {}).get('ok_count', 0)}"
         f"/{(payload.data.get('commodity_drivers') or {}).get('total', 0)} 正常。"
@@ -251,7 +287,7 @@ def _etf_candidate(payload: AdapterPayload) -> _Candidate | None:
     )
 
 
-def _industry_candidate(payload: AdapterPayload) -> _Candidate | None:
+def _industry_candidate(payload: AdapterPayload, baselines: _Baselines) -> _Candidate | None:
     rows = payload.data.get("industries", []) or []
     if not rows:
         return None
@@ -265,9 +301,9 @@ def _industry_candidate(payload: AdapterPayload) -> _Candidate | None:
         f"今日核心信号是行业热度榜首 **{name}**"
         f"（热度={heat:.3f}，政策口径={_SIGNAL_LABELS.get(str(top.get('policy_signal')), '中性')}）。"
     )
-    intensity = describe_intensity(heat, BASELINE_INDUSTRY_HEAT_7D)
+    intensity = describe_intensity(heat, baselines.industry_heat)
     context = (
-        f"对比近 7 日热度均值 ≈{BASELINE_INDUSTRY_HEAT_7D:.2f}，"
+        f"对比近 7 日热度均值 ≈{baselines.industry_heat:.2f}，"
         f"今日热度{intensity}，关注政策叠加是否同向放大。"
     )
     action = (

@@ -118,6 +118,24 @@ def public_summary_path(source_key: str, *, root: Path | None = None) -> Path:
     return base.joinpath(*subpath, leaf)
 
 
+#: Relative location of super-pricing's narrative-history archive within its
+#: repo. Unlike the public summary, this is a *local runtime cache* — it is
+#: never committed and therefore absent in CI and fresh clones.
+_NARRATIVE_HISTORY_SUBPATH: tuple[str, ...] = ("cache", "alt_data", "narrative_history.jsonl")
+
+
+def narrative_history_path(*, root: Path | None = None) -> Path:
+    """Resolve super-pricing's ``narrative_history.jsonl`` archive.
+
+    ``root`` overrides the discovered super-pricing repo root (used by tests
+    to point at an isolated ``tmp_path``). The archive is a local cache, so
+    callers must treat a missing path as a normal fallback condition rather
+    than an error.
+    """
+    base = root if root is not None else SOURCE_REPO_DIRS["super_pricing"]
+    return base.joinpath(*_NARRATIVE_HISTORY_SUBPATH)
+
+
 # ---------------------------------------------------------------------------
 # Preference toggling
 # ---------------------------------------------------------------------------
@@ -215,6 +233,7 @@ __all__ = [
     "env_flag",
     "env_value",
     "load_source_config",
+    "narrative_history_path",
     "public_summary_path",
     "source_mode_to_kwargs",
 ]
