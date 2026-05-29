@@ -52,7 +52,7 @@ def _seed_source_root(scratch: Path) -> dict[str, Path]:
     """
     layouts = {
         "super_pricing": (
-            scratch / "PycharmProjects" / "super-pricing-system" / "data" / "public",
+            scratch / "super-pricing-system" / "data" / "public",
             PUBLIC_FIXTURES / "alt_data_summary.json",
             "alt_data_summary.json",
         ),
@@ -62,7 +62,7 @@ def _seed_source_root(scratch: Path) -> dict[str, Path]:
             "index_research_summary.json",
         ),
         "quant_trading": (
-            scratch / "PycharmProjects" / "quant-trading-system" / "data" / "public",
+            scratch / "quant-trading-system" / "data" / "public",
             PUBLIC_FIXTURES / "quant_summary.json",
             "quant_summary.json",
         ),
@@ -133,12 +133,12 @@ def _reload_config_with_root(monkeypatch: pytest.MonkeyPatch, root: Path) -> Non
     monkeypatch.setitem(
         cfg_mod.SOURCE_REPO_DIRS,
         "super_pricing",
-        root / "PycharmProjects" / "super-pricing-system",
+        root / "super-pricing-system",
     )
     monkeypatch.setitem(
         cfg_mod.SOURCE_REPO_DIRS,
         "quant_trading",
-        root / "PycharmProjects" / "quant-trading-system",
+        root / "quant-trading-system",
     )
     monkeypatch.setitem(
         cfg_mod.SOURCE_REPO_DIRS,

@@ -42,7 +42,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Leonard-Don/super-pricing-system
-          path: sources/PycharmProjects/super-pricing-system
+          path: sources/super-pricing-system
           fetch-depth: 1
           sparse-checkout: |
             data/public
@@ -62,7 +62,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Leonard-Don/quant-trading-system
-          path: sources/PycharmProjects/quant-trading-system
+          path: sources/quant-trading-system
           fetch-depth: 1
           sparse-checkout: |
             data/public

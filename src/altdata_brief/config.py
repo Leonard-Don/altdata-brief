@@ -63,11 +63,13 @@ DEFAULT_SOURCE_REPOS_ROOT = Path(
     env_value("ALTDATA_BRIEF_SOURCE_ROOT", "CN_ALTDATA_BRIEF_SOURCE_ROOT") or Path.home()
 )
 
-#: Sibling checkouts each adapter expects. Names match
-#: ``adapters/<key>.py``'s source-project identifier.
+#: Sibling checkouts each adapter expects, laid out *flat* directly under
+#: :data:`DEFAULT_SOURCE_REPOS_ROOT` (``<root>/<repo-dir>``). Names match
+#: ``adapters/<key>.py``'s source-project identifier. Override the root via
+#: ``ALTDATA_BRIEF_SOURCE_ROOT`` (CI sets it to ``<workspace>/sources``).
 SOURCE_REPO_DIRS: dict[str, Path] = {
-    "super_pricing": DEFAULT_SOURCE_REPOS_ROOT / "PycharmProjects" / "super-pricing-system",
-    "quant_trading": DEFAULT_SOURCE_REPOS_ROOT / "PycharmProjects" / "quant-trading-system",
+    "super_pricing": DEFAULT_SOURCE_REPOS_ROOT / "super-pricing-system",
+    "quant_trading": DEFAULT_SOURCE_REPOS_ROOT / "quant-trading-system",
     "index_research": DEFAULT_SOURCE_REPOS_ROOT / "index-inclusion-research",
     "etf_512400": DEFAULT_SOURCE_REPOS_ROOT / "ETF 512400",
 }

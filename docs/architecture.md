@@ -52,8 +52,8 @@
 
 | Adapter | Public artifact | Cache/live fallback | 关键字段 |
 |---|---|---|
-| `SuperPricingAdapter` | `~/PycharmProjects/super-pricing-system/data/public/alt_data_summary.json` | `cache/alt_data/providers/{policy_radar,macro_hf}.json` | `policy_radar.industry_signals`, `macro_hf.metals` |
-| `QuantTradingAdapter` | `~/PycharmProjects/quant-trading-system/data/public/quant_summary.json` | `cache/alt_data/providers/policy_radar.json` + industry cache | `policy_radar.top_industries`, `industry_heat.top_industries_by_score`, `etf_rotation`, `paper_trading` profile names |
+| `SuperPricingAdapter` | `~/super-pricing-system/data/public/alt_data_summary.json` | `cache/alt_data/providers/{policy_radar,macro_hf}.json` | `policy_radar.industry_signals`, `macro_hf.metals` |
+| `QuantTradingAdapter` | `~/quant-trading-system/data/public/quant_summary.json` | `cache/alt_data/providers/policy_radar.json` + industry cache | `policy_radar.top_industries`, `industry_heat.top_industries_by_score`, `etf_rotation`, `paper_trading` profile names |
 | `IndexResearchAdapter` | `~/index-inclusion-research/data/public/index_research_summary.json` | `results/real_tables/cma_hypothesis_verdicts.csv` + `pap_deviation_report.csv` | `verdicts`, `pap_changes` |
 | `ETF512400Adapter` | `~/ETF 512400/src/data/liveSnapshot.json` | same public-by-default file | `quote`, `nav`, `meta.sourceHealth` |
 
