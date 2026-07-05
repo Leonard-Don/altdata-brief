@@ -6,7 +6,9 @@ stale, or misleading.
 
 The checks are deliberately conservative — they should pass on a
 healthy day and fail loudly when something is structurally wrong
-upstream (cache stale, file missing, all-zero signals).
+upstream (file missing, timestamps missing, all-zero signals). Pure
+freshness drift is reported as WARN so scheduled public-summary runs do
+not fail only because an upstream source paused for a few days.
 """
 
 from __future__ import annotations
@@ -205,7 +207,7 @@ def _check_macro_metals(payload: AdapterPayload | None) -> CheckResult:
 
 
 def _check_super_pricing_provider_freshness(payload: AdapterPayload | None) -> CheckResult:
-    """Fail when super-pricing's public wrapper is fresh but inner providers are stale."""
+    """Warn when super-pricing's public wrapper is fresh but inner providers are stale."""
     name = "super_pricing.provider_freshness"
     if payload is None:
         return CheckResult(
@@ -259,12 +261,18 @@ def _check_super_pricing_provider_freshness(payload: AdapterPayload | None) -> C
             parts.append("stale: " + ", ".join(stale_details))
         if missing:
             parts.append("missing timestamp: " + ", ".join(f"{p}=ts_missing" for p in missing))
+        level = FAIL if missing else WARN
+        action = (
+            "Add provider timestamps before publishing."
+            if missing
+            else "Brief may be generated with stale upstream data; refresh super-pricing when available."
+        )
         return CheckResult(
             name=name,
-            level=FAIL,
+            level=level,
             message=(
                 "; ".join(parts)
-                + f" (max {PROVIDER_FRESH_HOURS}h). Refresh super-pricing providers before publishing."
+                + f" (max {PROVIDER_FRESH_HOURS}h). {action}"
             ),
             detail=detail,
         )
@@ -329,7 +337,7 @@ def _check_etf_snapshot_age(
 
 
 def _check_etf_required_source_health(payload: AdapterPayload | None) -> CheckResult:
-    """Fail when ETF quote or another required ETF source is degraded."""
+    """Fail on degraded ETF sources; warn when the quote date is only stale."""
     name = "etf_512400.required_source_health"
     if payload is None:
         return CheckResult(
@@ -363,17 +371,18 @@ def _check_etf_required_source_health(payload: AdapterPayload | None) -> CheckRe
         quote_ok = bool(quote_source.get("ok"))
         quote_fallback = bool(quote_source.get("fallback"))
 
-    issues: list[str] = []
+    fail_issues: list[str] = []
+    warn_issues: list[str] = []
     if required_total and required_ok < required_total:
-        issues.append(f"required sources {required_ok}/{required_total} ok")
+        fail_issues.append(f"required sources {required_ok}/{required_total} ok")
     has_quote_flags = "quote_ok" in health or "quote_fallback" in health
     if (quote_source is not None or has_quote_flags) and (not quote_ok or quote_fallback):
-        issues.append("quote source degraded")
+        fail_issues.append("quote source degraded")
     quote_dt_missing = trade_dt is None
     if quote_dt_missing:
-        issues.append(f"quote trade date unparsable ({trade_date_raw!r})")
+        fail_issues.append(f"quote trade date unparsable ({trade_date_raw!r})")
     elif quote_age_days is not None and quote_age_days > MAX_ETF_QUOTE_AGE_DAYS:
-        issues.append(
+        warn_issues.append(
             f"quote trade date stale (age={quote_age_days}d > {MAX_ETF_QUOTE_AGE_DAYS}d, "
             f"trade_date={trade_dt.isoformat()}, today_utc={today.isoformat()})"
         )
@@ -392,11 +401,18 @@ def _check_etf_required_source_health(payload: AdapterPayload | None) -> CheckRe
             "missing_or_unparsable": quote_dt_missing,
         },
     }
-    if issues:
+    if fail_issues or warn_issues:
+        level = FAIL if fail_issues else WARN
+        suffix = (
+            "Refresh ETF 512400 before publishing."
+            if fail_issues
+            else "Brief may be generated with stale ETF quote data; refresh ETF 512400 when available."
+        )
+        all_issues = fail_issues + warn_issues
         return CheckResult(
             name=name,
-            level=FAIL,
-            message="; ".join(issues) + ". Refresh ETF 512400 before publishing.",
+            level=level,
+            message="; ".join(all_issues) + f". {suffix}",
             detail=detail,
         )
     return CheckResult(

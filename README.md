@@ -132,7 +132,7 @@ uv run altdata-brief generate --source-mode public  # CI mode, public summaries 
 ```
 
 生成结果落在 `output/briefs/YYYY-MM-DD.md`、`output/charts/YYYY-MM-DD/*.png`、`output/feed.xml` 与 `output/feed.atom`。周报/月报落在 `output/digests/` 并由同一个 publisher 发布。
-发布/CI 场景请使用 `uv run altdata-brief validate --strict --fail-on-warn`：`--strict` 额外跑内容质量校验（指纹新鲜度 / 信号密度 / 跨源一致性 / schema 回归 / 占位符 / 时序一致性 / 必需上游路径），`--fail-on-warn` 把 WARN 也升级为阻断。每日 GitHub Actions 工作流已默认带 `--strict`。
+发布/CI 场景请使用 `uv run altdata-brief validate --strict`：`--strict` 额外跑内容质量校验（指纹新鲜度 / 信号密度 / 跨源一致性 / schema 回归 / 占位符 / 时序一致性 / 必需上游路径）。每日 GitHub Actions 工作流允许 WARN 继续生成，避免上游公开摘要几天未刷新时把定时任务打红；需要人工阻断 WARN 时再额外加 `--fail-on-warn`。
 
 ### 可选 LLM 改写 / Optional LLM rephrase
 
